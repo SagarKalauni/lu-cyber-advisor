@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LU Cybersecurity Degree Advisor — Lindenwood University</title>
+
+  <!-- LU Stylesheet -->
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- PDF.js for client-side transcript parsing -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+  <!-- xlsx-js-style for official template Excel generation with formatting -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     GLOBAL HEADER
+══════════════════════════════════════════════════════════════ -->
+<header class="global-header">
+  <div class="header-logo">
+    <div class="header-logo-icon">🦁</div>
+    <div class="header-logo-text">
+      <h1>Lindenwood University</h1>
+      <p>Cybersecurity BS — Academic Degree Advisor</p>
+    </div>
+  </div>
+  <nav class="header-nav">
+    <a href="#" onclick="return false;">College of Science, Technology &amp; Health</a>
+    <span class="header-term-badge" id="current-term-display">Fall 2026</span>
+  </nav>
+</header>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 1: WELCOME
+══════════════════════════════════════════════════════════════ -->
+<section id="screen-welcome" class="screen active">
+  <div class="welcome-container">
+    <div class="welcome-hero-icon">🦁</div>
+    <h2>Your Personal <span>Cybersecurity</span><br>Degree Advisor</h2>
+    <p>
+      Upload your unofficial transcript, and get an instant, verified degree plan.
+      Automatically extracts <strong>all completed, failed, and currently scheduled courses</strong>,
+      schedules your remaining terms, and populates the official Lindenwood University PPG Excel template.
+    </p>
+
+    <div class="welcome-features">
+      <div class="feature-card">
+        <div class="feature-icon">📄</div>
+        <h4>Full Transcript Audit</h4>
+        <p>Extracts completed courses, transfer credits, failed retakes, and active enrollments</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">🗺️</div>
+        <h4>Smart Degree Path</h4>
+        <p>Schedules every semester around prerequisites and rare 1x/year offerings</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">💬</div>
+        <h4>Conversational Coach</h4>
+        <p>Explains in plain English why every course is placed in its specific semester</p>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:1rem; justify-content:center; flex-wrap:wrap;">
+      <button id="btn-start" class="btn btn-primary btn-lg">
+        🚀 Start Degree Plan
+      </button>
+      <a href="#" class="btn btn-secondary" onclick="startDemo(); return false;">
+        👀 Load Cesar Mendoza Demo
+      </a>
+    </div>
+
+    <p style="margin-top:2rem; opacity:.7; font-size:.82rem;">
+      🔒 100% Client-Side Privacy: Your transcript is processed entirely inside your web browser. No student files are uploaded to any server.
+    </p>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 2: WIZARD
+══════════════════════════════════════════════════════════════ -->
+<section id="screen-wizard" class="screen">
+
+  <div class="step-indicator">
+    <div class="step active" id="step-dot-1">
+      <div class="step-circle"><span class="step-number">1</span></div>
+      <span class="step-label">Student Info</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step" id="step-dot-2">
+      <div class="step-circle"><span class="step-number">2</span></div>
+      <span class="step-label">Transcript</span>
+    </div>
+    <div class="step-connector"></div>
+    <div class="step" id="step-dot-3">
+      <div class="step-circle"><span class="step-number">3</span></div>
+      <span class="step-label">Review &amp; Schedule</span>
+    </div>
+  </div>
+
+  <div class="wizard-container">
+
+    <!-- ─── STEP 1: Student Info + Catalog Year ─── -->
+    <div class="wizard-step active" id="wizard-step-1">
+      <h2 class="wizard-step-title">Step 1: Student Information &amp; Catalog</h2>
+      <p class="wizard-step-desc">Enter the student's name, ID, and catalog year (or skip and let the transcript fill them automatically).</p>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="input-name">Student Full Name</label>
+          <input type="text" id="input-name" class="form-input" placeholder="e.g. Cesar Mendoza">
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="input-id">Student ID</label>
+          <input type="text" id="input-id" class="form-input" placeholder="e.g. A000030323244">
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label" for="select-catalog">
+            Catalog Year <span class="required">*</span>
+          </label>
+          <select id="select-catalog" class="form-select">
+            <!-- Populated by JS -->
+          </select>
+          <div class="form-hint">
+            The catalog year is locked upon entry or readmission. (e.g. Fall 2025 entry = 2025–2026 Catalog).
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label" for="select-current-term">Current Advising Term</label>
+          <select id="select-current-term" class="form-select">
+            <!-- Populated by JS -->
+          </select>
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-outline" onclick="showScreen('screen-welcome')">← Back</button>
+        <button id="btn-step2-next" class="btn btn-maroon">
+          Next: Upload Transcript →
+        </button>
+      </div>
+    </div>
+
+    <!-- ─── STEP 2: Transcript Upload ─── -->
+    <div class="wizard-step" id="wizard-step-2">
+      <h2 class="wizard-step-title">Step 2: Unofficial Transcript (PDF)</h2>
+      <p class="wizard-step-desc">
+        Drop the Lindenwood unofficial transcript PDF below. The system will automatically read
+        <strong>all completed courses, grades, credits, GPA, and currently registered courses</strong>.
+      </p>
+
+      <!-- Drop zone -->
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-icon">📎</div>
+        <h3>Drop Unofficial Transcript PDF Here</h3>
+        <p>or click anywhere in this box to select your file</p>
+        <div class="drop-zone-or">— OR —</div>
+        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); document.getElementById('file-input').click();">
+          Browse PDF Files
+        </button>
+        <input type="file" id="file-input" accept=".pdf" class="file-input-hidden">
+      </div>
+
+      <div class="parse-status" id="parse-status"></div>
+      
+      <!-- Auto Transcript Audit Result Card (Shows immediately after upload) -->
+      <div class="transcript-preview" id="transcript-preview"></div>
+
+      <!-- Manual entry toggle -->
+      <div style="margin-top:1.5rem;">
+        <button id="btn-toggle-manual" class="btn btn-outline btn-sm">
+          ✏️ Enter transcript manually / paste text
+        </button>
+        <div id="manual-transcript" style="display:none; margin-top:1rem;">
+          <label class="form-label">Paste transcript text content:</label>
+          <textarea id="textarea-manual" class="form-input" rows="8"
+            placeholder="Paste text from your transcript here...&#10;Example:&#10;Term: Fall 25&#10;ICS21300 Foundations of Information Technology 3.00 3.00 3.00 D&#10;MTH14100 Basic Statistics 3.00 3.00 6.00 C"></textarea>
+          <button id="btn-parse-manual" class="btn btn-maroon btn-sm" style="margin-top:.5rem;">
+            Parse Pasted Text
+          </button>
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-outline step-back-btn">← Back</button>
+        <div style="display:flex; gap:.75rem;">
+          <button id="btn-skip-transcript" class="btn btn-outline">
+            Skip (No transcript available)
+          </button>
+          <button id="btn-step3-next" class="btn btn-outline">
+            Review / Add Extra Courses →
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ─── STEP 3: Optional Additional Courses Override ─── -->
+    <div class="wizard-step" id="wizard-step-3">
+      <h2 class="wizard-step-title">Step 3: Verify / Add Currently Registered Courses</h2>
+      <p class="wizard-step-desc">
+        All registered courses from the transcript were automatically included. You can optionally check or add additional courses below before generating the plan.
+      </p>
+
+      <div class="form-group">
+        <label class="form-label">Add Additional Course Codes (comma-separated):</label>
+        <input type="text" id="input-current-courses" class="form-input"
+          placeholder="e.g. HIST 11300, CCJ 20000">
+        <div class="form-hint">Type any additional course codes you want to register for this term.</div>
+      </div>
+
+      <div style="margin:.75rem 0; font-weight:700; font-size:.9rem; color:var(--gray-700);">Major Coursework Enrollment:</div>
+
+      <div class="form-group">
+        <div class="course-checkbox-list" id="current-courses-list">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <div class="wizard-nav">
+        <button class="btn btn-outline step-back-btn">← Back to Transcript</button>
+        <button id="btn-generate" class="btn btn-primary btn-lg">
+          🚀 Generate Complete Degree Plan &amp; PPG
+        </button>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 3: ANALYZING
+══════════════════════════════════════════════════════════════ -->
+<section id="screen-analyzing" class="screen">
+  <div>
+    <div class="analyzing-spinner">⚙️</div>
+    <h2>Leo is Auditing &amp; Scheduling Your Path…</h2>
+    <p style="opacity:.85; margin-top:.5rem;">Calculating prerequisite sequence, term availability, and degree requirements</p>
+    <ul class="analyzing-steps">
+      <li>📋 Auditing General Education and Major coursework</li>
+      <li>🔗 Evaluating prerequisite dependencies and grade thresholds</li>
+      <li>📅 Aligning with 8-week term availability (Fall I/II, Spring I/II, Summer)</li>
+      <li>🎯 Populating official Lindenwood University PPG Excel file</li>
+    </ul>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCREEN 4: RESULTS
+══════════════════════════════════════════════════════════════ -->
+<section id="screen-results" class="screen">
+
+  <div class="results-header">
+    <h2 id="results-student-name">Cybersecurity BS Degree Plan</h2>
+    <p>Lindenwood University — College of Science, Technology &amp; Health</p>
+  </div>
+
+  <div class="results-container">
+
+    <!-- 1. Leo's Conversational Advising Speech Bubble -->
+    <div id="advisor-speech-banner"></div>
+
+    <!-- 2. Academic Summary Cards Banner -->
+    <div id="summary-banner"></div>
+
+    <!-- 3. Flags & Concerns Panel -->
+    <div class="concerns-panel" id="concerns-panel" style="display:none;"></div>
+
+    <!-- 4. Semester Grid -->
+    <div class="section-label">📅 Semester-by-Semester Degree Path</div>
+    <p style="font-size:.88rem; color:var(--gray-600); margin-bottom:1rem;">
+      💡 <strong>Interactive Degree Map:</strong> Click any course chip to hear Leo explain why that course is scheduled in that term, its prerequisites, and what future courses it unlocks.
+    </p>
+    <div class="semester-grid" id="semester-grid"></div>
+
+    <!-- 5. Ask Leo Interactive Q&A Assistant -->
+    <div id="ask-leo-section" class="ask-leo-section"></div>
+
+    <!-- 6. General Education Requirements Panel -->
+    <div class="section-label">📋 General Education Requirements Check</div>
+    <div class="ge-status-panel" id="ge-status-panel"></div>
+
+    <!-- 7. Bottom Main Convinced Action Banner -->
+    <div class="convinced-cta-box">
+      <div class="convinced-cta-text">
+        <h3>Ready to Finalize Your Plan?</h3>
+        <p>Everything is verified against your catalog year. Download your official Lindenwood University Program Planning Guide (PPG) Excel file.</p>
+      </div>
+      <button id="btn-convinced" class="btn btn-primary btn-lg btn-convinced-main">
+        🦁 I'm Convinced — Download My Degree Plan &amp; PPG (.xlsx)
+      </button>
+    </div>
+
+    <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:1.5rem; justify-content:center;">
+      <button id="btn-new-plan" class="btn btn-outline">🔄 Start New Plan</button>
+      <button id="btn-print"    class="btn btn-outline">🖨️ Print Degree Plan</button>
+    </div>
+
+  </div>
+
+  <!-- Floating Sticky Convinced Bar at Screen Bottom -->
+  <div class="download-bar" id="download-bar">
+    <span class="download-text">🎓 Official Lindenwood BS Cybersecurity Plan ready for download.</span>
+    <button id="btn-convinced-float" class="btn btn-primary btn-sm btn-convinced" onclick="document.getElementById('btn-convinced').click()">
+      🦁 I'm Convinced! Download (.xlsx)
+    </button>
+  </div>
+
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     COURSE DETAIL & CONVINCED MODAL
+══════════════════════════════════════════════════════════ -->
+<div id="modal-overlay">
+  <div id="modal-content">
+    <!-- Populated dynamically by app.js -->
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════════════════════════ -->
+<script src="js/courseData.js"></script>
+<script src="js/parser.js"></script>
+<script src="js/planner.js"></script>
+<script src="js/excel.js"></script>
+<script src="js/app.js"></script>
+
+<script>
+// ── CURRENT TERM DISPLAY ────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const termBadge = document.getElementById('current-term-display');
+  if (termBadge) {
+    const t = detectCurrentTerm();
+    termBadge.textContent = termDisplayShort(t);
+  }
+});
+
+// ── CESAR MENDOZA LIVE DEMO (EXACT DATA FROM TRANSCRIPT) ──
+function startDemo() {
+  AppState.studentName   = 'Cesar Mendoza';
+  AppState.studentId     = 'A000030323244';
+  AppState.catalogYear   = '25-26';
+  AppState.currentTermId = 'F2_2026';
+
+  const demoTranscript = {
+    courses: [
+      // Transfer Credits
+      { code:'GOVT', displayCode:'AP-GOVT', description:'GOVT & POLITICS: UNITED STATES (GE-HC:USHisGov)', term:'TRANSFER', termRaw:'Transfer Term', grade:'TR-P', earnedCredits:3, attemptCredits:3, passed:true, isTransfer:true },
+      { code:'IS187', displayCode:'IS187', description:'JAVA PROGRAMMING I (SLCC)', term:'TRANSFER', termRaw:'Transfer Term', grade:'TR-B', earnedCredits:4, attemptCredits:4, passed:true, isTransfer:true },
+      { code:'IS280', displayCode:'IS280', description:'PYTHON (SLCC)', term:'TRANSFER', termRaw:'Transfer Term', grade:'TR-B', earnedCredits:3, attemptCredits:3, passed:true, isTransfer:true },
+      // Fall 2025
+      { code:'CCJ20000', displayCode:'CCJ20000', description:'Criminology (GE-SocSci)', term:'F2_2025', termRaw:'Fall 25', grade:'B', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'ENGL15000', displayCode:'ENGL15000', description:'Composition I (GE-Comm)', term:'F2_2025', termRaw:'Fall 25', grade:'AH', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'ICS21300', displayCode:'ICS21300', description:'Foundations of Information Technology', term:'F2_2025', termRaw:'Fall 25', grade:'D', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'ICS21400', displayCode:'ICS21400', description:'Foundations of Networking', term:'F2_2025', termRaw:'Fall 25', grade:'C', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'MTH14100', displayCode:'MTH14100', description:'Basic Statistics (GE-Math)', term:'F2_2025', termRaw:'Fall 25', grade:'C', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'UNIV10100', displayCode:'UNIV10100', description:'First-Year Seminar', term:'F2_2025', termRaw:'Fall 25', grade:'B', earnedCredits:1, attemptCredits:1, passed:true },
+      // Spring 2026
+      { code:'ENGL17000', displayCode:'ENGL17000', description:'Composition II (GE-Comm)', term:'SP2_2026', termRaw:'Spring 26', grade:'F', earnedCredits:0, attemptCredits:3, passed:false, failed:true },
+      { code:'ICS31000', displayCode:'ICS31000', description:'Foundations of Cybersecurity', term:'SP2_2026', termRaw:'Spring 26', grade:'D', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'IIT22000', displayCode:'IIT22000', description:'Hardware and Operating Systems', term:'SP2_2026', termRaw:'Spring 26', grade:'F', earnedCredits:0, attemptCredits:3, passed:false, failed:true },
+      { code:'MTH11000', displayCode:'MTH11000', description:'Intermediate Algebra', term:'SP2_2026', termRaw:'Spring 26', grade:'D', earnedCredits:3, attemptCredits:3, passed:true },
+      { code:'PSY10000', displayCode:'PSY10000', description:'Principles of Psychology (GE-SocSci)', term:'SP2_2026', termRaw:'Spring 26', grade:'F R', earnedCredits:0, attemptCredits:3, passed:false, failed:true },
+      // Fall 2026 (CURRENTLY REGISTERED ON TRANSCRIPT)
+      { code:'IIT22000', displayCode:'IIT22000', description:'Hardware and Operating Systems', term:'F2_2026', termRaw:'Fall 26', grade:'', earnedCredits:0, attemptCredits:0, isRegistered:true },
+      { code:'IIT33500', displayCode:'IIT33500', description:'Blockchain Technology for Business', term:'F2_2026', termRaw:'Fall 26', grade:'', earnedCredits:0, attemptCredits:0, isRegistered:true },
+      { code:'PSY10000', displayCode:'PSY10000', description:'Principles of Psychology (GE-SocSci)', term:'F2_2026', termRaw:'Fall 26', grade:'', earnedCredits:0, attemptCredits:0, isRegistered:true },
+    ],
+    studentInfo: {
+      name: 'Cesar Mendoza',
+      id: 'A000030323244',
+      program: 'Cybersecurity',
+      gpa: '1.45',
+      qualityPoints: 45.0,
+      totalCourses: 11,
+      totalAttempted: 41.0,
+      totalEarned: 32.0
+    }
+  };
+
+  AppState.parsedTranscript = demoTranscript;
+  AppState.inProgressCourses = ['IIT22000', 'IIT33500', 'PSY10000'];
+
+  showScreen('screen-wizard');
+  showStep(2);
+  renderTranscriptAudit(demoTranscript);
+
+  if (document.getElementById('input-name')) document.getElementById('input-name').value = 'Cesar Mendoza';
+  if (document.getElementById('input-id'))   document.getElementById('input-id').value   = 'A000030323244';
+  if (document.getElementById('select-catalog')) document.getElementById('select-catalog').value = '25-26';
+}
+</script>
+
+</body>
+</html>

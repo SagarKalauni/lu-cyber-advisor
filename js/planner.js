@@ -1,0 +1,533 @@
+// ============================================================
+// DEGREE PLANNER  —  planner.js
+// Core algorithm: builds an optimal semester-by-semester plan
+// Handles completed courses, registered courses from transcript,
+// failed retakes, and future prerequisite-driven terms
+// ============================================================
+
+const MAX_COURSES_PER_TERM = 3;
+
+/**
+ * buildDegreePlan(options)
+ */
+function buildDegreePlan({ catalogYear, currentTermId, allCourses, inProgressIds, studentName, studentId, studentInfo }) {
+  const catalog = CATALOGS[catalogYear] || CATALOGS['26-27'];
+  const requiredIds = getCatalogCourseIds(catalogYear);
+
+  const completed   = {}; // courseId -> { termId, grade, earned, description }
+  const failed      = {}; // courseId -> [{ termId, grade }]
+  const inProgress  = {}; // courseId -> termId
+  const geCompleted = {}; // slotId -> { course, termId, description }
+
+  const allTranscriptCourses = allCourses || [];
+
+  // ── 1. Process all transcript courses ─────────────────────
+  // DEDUP LOGIC: If a course appears multiple times (failed then retaken),
+  // we track both but only count credit once (the passed instance).
+  // If currently registered for a previously-failed course, show it as inProgress.
+  
+  // First pass: identify all passed/failed/registered entries
+  const passedEntries = {}; // courseId -> best passed entry
+  const failedEntries = {}; // courseId -> [fail entries]
+  const registeredEntries = {}; // courseId -> termId
+
+  allTranscriptCourses.forEach(c => {
+    if (!c.code) return;
+    const id = normalizeCode(c.code);
+
+    if (c.passed) {
+      // Keep the most recent passed entry (highest term index)
+      if (!passedEntries[id] || termIndex(c.term) > termIndex(passedEntries[id].term)) {
+        passedEntries[id] = c;
+      }
+    } else if (c.failed) {
+      if (!failedEntries[id]) failedEntries[id] = [];
+      failedEntries[id].push(c);
+    } else if (c.isRegistered) {
+      registeredEntries[id] = c.term || currentTermId;
+    }
+  });
+
+  // Second pass: build completed/failed/inProgress maps (no double counting)
+  Object.entries(passedEntries).forEach(([id, c]) => {
+    completed[id] = {
+      termId: c.term || 'TRANSFER',
+      grade: c.grade,
+      earned: c.earnedCredits || 3,
+      description: c.description
+    };
+  });
+
+  Object.entries(failedEntries).forEach(([id, entries]) => {
+    // Only add to failed if NOT already passed
+    if (!completed[id]) {
+      failed[id] = entries.map(e => ({ termId: e.term, grade: e.grade }));
+    }
+  });
+
+  Object.entries(registeredEntries).forEach(([id, termId]) => {
+    // Registered = currently enrolled; takes priority over failed status
+    inProgress[id] = termId;
+    // If they were in failed list but are now retaking, keep failed entry for display
+    // but do NOT include in active-fail-only logic
+  });
+
+  // Third pass: Match General Education slots (most restrictive first)
+  // Note: ge_div1 and ge_div2 are Human Diversity overlays (ILO 2.5) that double-dip
+  // and are populated in the dedicated pass below.
+  const GE_PRIORITY_ORDER = [
+    'ge_ushist', 'ge_comp1', 'ge_comp2', 'ge_stats',
+    'ge_art', 'ge_lit', 'ge_socsci', 'ge_natsci', 'ge_socnat', 'ge_math',
+    'ge_nonlit', 'ge_hcelect', 'ge_elec1', 'ge_elec2'
+  ];
+
+  const geSlotById = {};
+  GE_SLOTS.forEach(slot => { geSlotById[slot.id] = slot; });
+
+  // ── GENERAL EDUCATION MATCHING ────────────────────────────
+  // Pass 1: Match passed courses in strict priority order
+  const passedCoursesForGE = allTranscriptCourses.filter(c => c.passed);
+  const assignedToGE = new Set(); // track course codes assigned to prevent double-counting across different GE slots
+
+  GE_PRIORITY_ORDER.forEach(slotId => {
+    if (geCompleted[slotId]) return;
+    const slot = geSlotById[slotId];
+    if (!slot) return;
+    if (slot.credits === 0) return;
+
+    for (const c of passedCoursesForGE) {
+      const courseKey = (c.code || '').replace(/[\s-]/g, '').toUpperCase();
+      if (assignedToGE.has(courseKey)) continue;
+      if (!matchesGESlot(slot, c.code, c.description)) continue;
+
+      geCompleted[slotId] = {
+        course: c.displayCode || c.code,
+        termId: c.term,
+        description: c.description,
+        isRegistered: false,
+        credits: slot.credits || 3
+      };
+
+      assignedToGE.add(courseKey);
+      break;
+    }
+  });
+
+  // Pass 2: If any slot is still unfilled, check currently registered / in-progress courses
+  const registeredCoursesForGE = allTranscriptCourses.filter(c => c.isRegistered);
+
+  GE_PRIORITY_ORDER.forEach(slotId => {
+    if (geCompleted[slotId]) return;
+    const slot = geSlotById[slotId];
+    if (!slot) return;
+    if (slot.credits === 0) return;
+
+    for (const c of registeredCoursesForGE) {
+      const courseKey = (c.code || '').replace(/[\s-]/g, '').toUpperCase();
+      if (assignedToGE.has(courseKey)) continue;
+      if (!matchesGESlot(slot, c.code, c.description)) continue;
+
+      geCompleted[slotId] = {
+        course: c.displayCode || c.code,
+        termId: c.term,
+        description: c.description,
+        isRegistered: true,
+        credits: 0 // In-progress courses show 0 credits on official PPG until grade is posted
+      };
+
+      assignedToGE.add(courseKey);
+      break;
+    }
+  });
+
+  // MTH 14100 double-dip: if stats is satisfied, and math is still empty, double-count to math
+  if (geCompleted['ge_stats'] && !geCompleted['ge_math']) {
+    geCompleted['ge_math'] = {
+      ...geCompleted['ge_stats'],
+      course: geCompleted['ge_stats'].course,
+      note: 'Double-counted from MTH 14100 (Required Core)'
+    };
+  }
+
+  // ── HUMAN DIVERSITY OVERLAY (ILO 2.5) ──────────────────────
+  // Human Diversity (ge_div1, ge_div2) can be double-applied to other GE requirements.
+  // Two distinct courses meeting ILO 2.5 / HD are needed.
+  const hdCandidates = [];
+  const cleanCode = (str) => (str || '').replace(/[\s-]/g, '').toUpperCase();
+
+  // 1. Check courses already assigned to primary GE slots
+  for (const [sId, info] of Object.entries(geCompleted)) {
+    if (sId === 'ge_div1' || sId === 'ge_div2') continue;
+    if (matchesGESlot(geSlotById['ge_div1'], info.course, info.description)) {
+      if (!hdCandidates.some(cand => cleanCode(cand.course) === cleanCode(info.course))) {
+        hdCandidates.push({
+          course: info.course,
+          termId: info.termId,
+          description: info.description,
+          isRegistered: !!info.isRegistered,
+          note: `Double-applied from ${geSlotById[sId]?.label || sId}`
+        });
+      }
+    }
+  }
+
+  // 2. Check any remaining transcript courses (passed or registered)
+  allTranscriptCourses.forEach(c => {
+    if (c.passed || c.isRegistered) {
+      if (matchesGESlot(geSlotById['ge_div1'], c.code, c.description)) {
+        if (!hdCandidates.some(cand => cleanCode(cand.course) === cleanCode(c.code))) {
+          hdCandidates.push({
+            course: c.displayCode || c.code,
+            termId: c.term,
+            description: c.description,
+            isRegistered: !!c.isRegistered,
+            note: 'Human Diversity course'
+          });
+        }
+      }
+    }
+  });
+
+  // Assign up to two distinct HD candidates to ge_div1 and ge_div2
+  if (hdCandidates.length > 0) {
+    geCompleted['ge_div1'] = {
+      ...hdCandidates[0],
+      credits: 0 // double-applied overlay
+    };
+  }
+  if (hdCandidates.length > 1) {
+    geCompleted['ge_div2'] = {
+      ...hdCandidates[1],
+      credits: 0 // double-applied overlay
+    };
+  }
+
+  // Add any explicitly provided in-progress IDs
+  (inProgressIds || []).forEach(id => {
+    const nid = normalizeCode(id);
+    if (!inProgress[nid]) inProgress[nid] = currentTermId;
+  });
+
+  // 2. Identify remaining courses needed
+  // A course is needed if: not completed AND not in-progress
+  const needed = requiredIds.filter(id => !completed[id] && !inProgress[id]);
+
+  // 3. Prerequisite checker
+  const scheduled = []; // will be populated below
+  
+  function prereqsDone(courseId, asOfTermIdx) {
+    const course = getCourse(courseId);
+    if (!course || !course.prereqs || course.prereqs.length === 0) return { ok: true, missing: [] };
+    if (course.prereqs.includes('LAST_TERM')) return { ok: true, missing: [] };
+
+    const missing = [];
+    for (const prereqId of course.prereqs) {
+      if (prereqId === 'MTH14100') {
+        if (completed['MTH14100'] && termIndex(completed['MTH14100'].termId) < asOfTermIdx) continue;
+        if (inProgress['MTH14100'] && termIndex(inProgress['MTH14100']) < asOfTermIdx) continue;
+        const schM = scheduled.find(s => s.id === 'MTH14100');
+        if (schM && termIndex(schM.termId) < asOfTermIdx) continue;
+        missing.push('MTH 14100 Basic Statistics');
+        continue;
+      }
+      const cDone = completed[prereqId];
+      if (cDone && termIndex(cDone.termId) < asOfTermIdx) continue;
+      const cIP = inProgress[prereqId];
+      if (cIP && termIndex(cIP) < asOfTermIdx) continue;
+      const cSch = scheduled.find(s => s.id === prereqId);
+      if (cSch && termIndex(cSch.termId) < asOfTermIdx) continue;
+
+      missing.push(getCourse(prereqId)?.code || prereqId);
+    }
+    return { ok: missing.length === 0, missing };
+  }
+
+  // 4. Scheduling algorithm
+  const startTermIdx = termIndex(currentTermId) + 1;
+  const termLoad     = {};
+
+  function getLoad(termId) { return termLoad[termId] || 0; }
+  function addLoad(termId) { termLoad[termId] = (termLoad[termId] || 0) + 1; }
+
+  // Count in-progress courses against their terms
+  Object.entries(inProgress).forEach(([id, termId]) => {
+    addLoad(termId);
+  });
+
+  function findEarliestTerm(courseId, afterTermIdx) {
+    const course = getCourse(courseId);
+    if (!course) return null;
+
+    const offeredSeasons = course.offered;
+
+    for (let i = Math.max(startTermIdx, afterTermIdx); i < TERM_SEQUENCE.length; i++) {
+      const tid = TERM_SEQUENCE[i];
+      const season = termSeason(tid);
+
+      if (!offeredSeasons.includes(season)) continue;
+      if (getLoad(tid) >= MAX_COURSES_PER_TERM) continue;
+
+      const { ok } = prereqsDone(courseId, i);
+      if (!ok) continue;
+
+      if (course.prereqs.includes('LAST_TERM')) return null;
+
+      return tid;
+    }
+    return null;
+  }
+
+  function constraintScore(courseId) {
+    const course = getCourse(courseId);
+    if (!course) return 0;
+    const offeredCount = course.offered ? course.offered.length : 5;
+    const prereqDepth = course.prereqs ? course.prereqs.length : 0;
+    return (5 - offeredCount) * 10 + prereqDepth;
+  }
+
+  const toSchedule = [...needed].sort((a,b) => constraintScore(b) - constraintScore(a));
+  const capstoneId = requiredIds.includes('ICS48900') ? 'ICS48900' : null;
+  const withoutCapstone = capstoneId ? toSchedule.filter(id => id !== capstoneId) : toSchedule;
+
+  let maxPasses = 15;
+  let remainingToSchedule = [...withoutCapstone];
+
+  while (remainingToSchedule.length > 0 && maxPasses-- > 0) {
+    const stillRemaining = [];
+    for (const courseId of remainingToSchedule) {
+      const earliestTerm = findEarliestTerm(courseId, startTermIdx);
+      if (earliestTerm) {
+        const course = getCourse(courseId);
+        const prereqs = (course.prereqs || []).filter(p => p !== 'LAST_TERM' && p !== 'MTH14100').map(p => getCourse(p)?.code || p);
+        const flags = [];
+        if (course.offered.length === 1) flags.push(`🚨 Only offered in ${termDisplayShort(earliestTerm).split(' ')[1]} — once per year`);
+        if (course.offered.length === 2) flags.push(`⚠️ Offered twice per year`);
+        if (failed[courseId] && !inProgress[courseId]) flags.push(`🔴 Retake from previous term`);
+
+        let reason = '';
+        if (prereqs.length > 0) {
+          reason += `Prerequisites satisfied: ${prereqs.join(', ')}. `;
+        }
+        reason += course.planningNote;
+
+        scheduled.push({ id: courseId, termId: earliestTerm, reason, flags, course });
+        addLoad(earliestTerm);
+      } else {
+        stillRemaining.push(courseId);
+      }
+    }
+    if (stillRemaining.length === remainingToSchedule.length) break;
+    remainingToSchedule = stillRemaining;
+  }
+
+  // Schedule Capstone in final semester
+  if (capstoneId && !completed[capstoneId] && !inProgress[capstoneId]) {
+    const lastScheduledTerm = scheduled.length > 0
+      ? scheduled.reduce((max, s) => termIndex(s.termId) > termIndex(max) ? s.termId : max, TERM_SEQUENCE[startTermIdx])
+      : TERM_SEQUENCE[startTermIdx];
+
+    const capCourse = getCourse(capstoneId);
+    for (let i = termIndex(lastScheduledTerm); i < TERM_SEQUENCE.length; i++) {
+      const tid = TERM_SEQUENCE[i];
+      if (capCourse.offered.includes(termSeason(tid)) && getLoad(tid) < MAX_COURSES_PER_TERM) {
+        scheduled.push({
+          id: capstoneId,
+          termId: tid,
+          reason: 'The Cybersecurity Capstone is scheduled in your final semester concurrent with your last course, as required by Lindenwood degree completion policy. Offered in Fall I and Spring I.',
+          flags: ['🎓 FINAL TERM CAPSTONE'],
+          course: capCourse
+        });
+        addLoad(tid);
+        break;
+      }
+    }
+  }
+
+  // 5. Build General Education status list
+  const geStatus = GE_SLOTS.map(slot => {
+    const done = geCompleted[slot.id];
+    return { ...slot, satisfied: !!done, satisfiedBy: done || null };
+  });
+
+  // 6. Group into semester display objects (COMBINING Fall I + II into Fall [Year], Spring I + II into Spring [Year])
+  const semesterMap = {};
+
+  function addToSemester(termId, courseEntry) {
+    const semId = termToSemesterId(termId);
+    if (!semesterMap[semId]) {
+      semesterMap[semId] = {
+        semId: semId,
+        termId: semId, // for compatibility
+        title: semesterTitle(semId),
+        courses: []
+      };
+    }
+    // Set subTerm label on entry (e.g. 'Term I' or 'Term II')
+    courseEntry.subTerm = termSubLabel(termId);
+    courseEntry.rawTermId = termId;
+
+    // Avoid duplicates within same semester
+    if (!semesterMap[semId].courses.some(x => x.id === courseEntry.id && x.status === courseEntry.status)) {
+      semesterMap[semId].courses.push(courseEntry);
+    }
+  }
+
+  // Completed courses — show ALL passed courses (including non-major)
+  allTranscriptCourses.filter(c => c.passed).forEach(c => {
+    const id = normalizeCode(c.code);
+    const t = c.term || 'TRANSFER';
+    addToSemester(t, {
+      id,
+      termId: t,
+      status: 'completed',
+      grade: c.grade,
+      course: getCourse(id) || { code: c.displayCode || c.code, name: c.description || id, credits: c.earnedCredits || 3 },
+      reason: getCourse(id)?.planningNote || 'Completed course towards degree requirements.'
+    });
+  });
+
+  // Failed courses — show in the semester they were failed, ONLY if not since passed or in-progress retake
+  allTranscriptCourses.filter(c => c.failed).forEach(c => {
+    const id = normalizeCode(c.code);
+    const t = c.term || 'Unknown';
+    addToSemester(t, {
+      id,
+      termId: t,
+      status: 'failed',
+      grade: c.grade,
+      course: getCourse(id) || { code: c.displayCode || c.code, name: c.description || id, credits: 0 },
+      reason: completed[id]
+        ? 'Grade of F received. Course was later retaken and passed.'
+        : (inProgress[id]
+            ? 'Grade of F received. Currently retaking this course.'
+            : 'Grade of F received. Must be retaken to earn credit and fulfill degree requirements.')
+    });
+  });
+
+  // In-progress courses (currently registered from transcript)
+  Object.entries(inProgress).forEach(([id, termId]) => {
+    const tInfo = allTranscriptCourses.find(c => normalizeCode(c.code) === id && c.isRegistered);
+    const courseData = getCourse(id) || {
+      code: tInfo?.displayCode || id,
+      name: tInfo?.description || id,
+      credits: 3
+    };
+
+    addToSemester(termId, {
+      id,
+      termId,
+      status: 'inProgress',
+      course: courseData,
+      reason: getCourse(id)?.planningNote || 'Currently enrolled course in the active semester. Will count toward degree requirements upon successful completion.'
+    });
+  });
+
+  // Scheduled future courses
+  scheduled.forEach(s => {
+    addToSemester(s.termId, {
+      id: s.id,
+      termId: s.termId,
+      status: 'planned',
+      reason: s.reason,
+      flags: s.flags,
+      course: s.course || getCourse(s.id)
+    });
+  });
+
+  // 7. Calculate stats from official transcript
+  let cumGPA = studentInfo?.gpa !== undefined && studentInfo.gpa !== null ? studentInfo.gpa : null;
+  let totalEarned = studentInfo?.totalEarned || 0;
+  let totalAttempted = studentInfo?.totalAttempted || 0;
+
+  if (totalEarned === 0) {
+    // Calculate from transcript without double-counting
+    const countedCodes = new Set();
+    allTranscriptCourses.forEach(c => {
+      const id = normalizeCode(c.code);
+      if (c.passed) {
+        if (!countedCodes.has(id)) {
+          // Only count each course once (use passed instance)
+          totalEarned += (c.earnedCredits || 0);
+          totalAttempted += (c.attemptCredits || 0);
+          countedCodes.add(id);
+        }
+      } else if (c.failed && !passedEntries[id]) {
+        // Count failed attempts only if never passed
+        totalAttempted += (c.attemptCredits || 0);
+      }
+      // Don't count registered courses (0 credits yet)
+    });
+  }
+
+  const majorCreditsCompleted = requiredIds
+    .filter(id => completed[id])
+    .reduce((sum, id) => sum + (getCourse(id)?.credits || 3), 0);
+
+  const majorCreditsInProgress = requiredIds
+    .filter(id => inProgress[id])
+    .reduce((sum, id) => sum + (getCourse(id)?.credits || 3), 0);
+
+  // 8. Generate advising concerns
+  const concerns = [];
+
+  if (cumGPA !== null && parseFloat(cumGPA) < 2.0) {
+    concerns.push({
+      type: 'error',
+      icon: '🚨',
+      title: `Cumulative GPA Below Lindenwood Standard (${cumGPA})`,
+      detail: `Lindenwood University requires a minimum 2.0 GPA both cumulatively and in major coursework for graduation. Repeating failed courses will replace previous 0.0 quality points and significantly lift your GPA.`
+    });
+  }
+
+  // Active retakes check
+  Object.entries(failed).forEach(([id, attempts]) => {
+    if (!completed[id] && !inProgress[id]) {
+      const cData = getCourse(id);
+      concerns.push({
+        type: 'warning',
+        icon: '⚠️',
+        title: `Retake Required: ${cData?.code || id} — ${cData?.name || ''}`,
+        detail: `This course was not passed previously and has been scheduled into your upcoming term plan. Please prioritize this course to keep your prerequisites unblocked.`
+      });
+    }
+  });
+
+  let graduationTerm = null;
+  const capEntry = scheduled.find(s => s.id === 'ICS48900');
+  if (capEntry) graduationTerm = termToSemesterId(capEntry.termId);
+  else if (inProgress['ICS48900']) graduationTerm = termToSemesterId(currentTermId);
+
+  // Sort semesters chronologically
+  const semesters = Object.values(semesterMap).sort((a,b) => {
+    return semesterSortOrder(a.semId) - semesterSortOrder(b.semId);
+  });
+
+  return {
+    studentName: studentName || studentInfo?.name || '',
+    studentId: studentId || studentInfo?.id || '',
+    catalogYear,
+    catalog,
+    currentTermId,
+    semesters,
+    geStatus,
+    concerns,
+    stats: {
+      cumGPA,
+      totalEarned,
+      totalAttempted,
+      majorCreditsRequired: catalog.majorCredits,
+      majorCreditsCompleted,
+      majorCreditsInProgress,
+      majorCreditsRemaining: Math.max(0, catalog.majorCredits - majorCreditsCompleted - majorCreditsInProgress),
+      graduationTerm,
+      completedCount: Object.keys(completed).filter(id => requiredIds.includes(id)).length,
+      totalRequired: requiredIds.length
+    },
+    completed,
+    inProgress,
+    scheduled,
+    failed,
+    geCompleted,
+    requiredIds
+  };
+}
