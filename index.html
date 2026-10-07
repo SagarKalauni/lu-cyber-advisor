@@ -73,7 +73,7 @@
         🎓 Load Wyatt Justus Demo (Excel Schedule)
       </a>
       <a href="#" class="btn btn-outline" onclick="startDemo(); return false;">
-        👀 Load Cesar Mendoza Demo (Transcript)
+        👀 Load Dummy Student Demo (Transcript)
       </a>
     </div>
 
@@ -116,7 +116,7 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-label" for="input-name">Student Full Name</label>
-          <input type="text" id="input-name" class="form-input" placeholder="e.g. Cesar Mendoza">
+          <input type="text" id="input-name" class="form-input" placeholder="e.g. Dummy Student">
         </div>
         <div class="form-group">
           <label class="form-label" for="input-id">Student ID</label>
@@ -356,9 +356,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// ── CESAR MENDOZA LIVE DEMO (EXACT DATA FROM TRANSCRIPT) ──
+// ── DUMMY STUDENT LIVE DEMO (EXACT DATA FROM TRANSCRIPT) ──
 function startDemo() {
-  AppState.studentName   = 'Cesar Mendoza';
+  AppState.studentName   = 'Dummy Student';
   AppState.studentId     = 'A000030323244';
   AppState.catalogYear   = '25-26';
   AppState.currentTermId = 'F2_2026';
@@ -388,7 +388,7 @@ function startDemo() {
       { code:'PSY10000', displayCode:'PSY10000', description:'Principles of Psychology (GE-SocSci)', term:'F2_2026', termRaw:'Fall 26', grade:'', earnedCredits:0, attemptCredits:0, isRegistered:true },
     ],
     studentInfo: {
-      name: 'Cesar Mendoza',
+      name: 'Dummy Student',
       id: 'A000030323244',
       program: 'Cybersecurity',
       gpa: '1.45',
@@ -406,7 +406,7 @@ function startDemo() {
   showStep(2);
   renderTranscriptAudit(demoTranscript);
 
-  if (document.getElementById('input-name')) document.getElementById('input-name').value = 'Cesar Mendoza';
+  if (document.getElementById('input-name')) document.getElementById('input-name').value = 'Dummy Student';
   if (document.getElementById('input-id'))   document.getElementById('input-id').value   = 'A000030323244';
   if (document.getElementById('select-catalog')) document.getElementById('select-catalog').value = '25-26';
 }

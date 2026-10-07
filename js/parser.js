@@ -395,7 +395,7 @@ async function parseScheduleExcel(fileOrBuffer, fileName = '') {
   let guessedName = '';
   const cleanFn = (fileName || '').replace(/\.[^/.]+$/, '');
   if (/wyatt/i.test(cleanFn)) guessedName = 'Wyatt Justus';
-  else if (/cesar/i.test(cleanFn)) guessedName = 'Cesar Mendoza';
+  else if (/cesar/i.test(cleanFn) || /dummy/i.test(cleanFn) || /mendoza/i.test(cleanFn)) guessedName = 'Dummy Student';
 
   const studentInfo = {
     name: guessedName,

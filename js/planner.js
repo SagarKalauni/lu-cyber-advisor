@@ -254,6 +254,10 @@ function buildDegreePlan({ catalogYear, currentTermId, allCourses, inProgressIds
     addLoad(termId);
   });
 
+const MAX_COURSES_PER_8W = 2; // Max 2 courses per 8-week term
+const MAX_COURSES_PER_SEM = 4; // Max 4 major courses per regular semester (12 credits)
+const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
+
   function findEarliestTerm(courseId, afterTermIdx) {
     const course = getCourse(courseId);
     if (!course) return null;
@@ -265,7 +269,16 @@ function buildDegreePlan({ catalogYear, currentTermId, allCourses, inProgressIds
       const season = termSeason(tid);
 
       if (!offeredSeasons.includes(season)) continue;
-      if (getLoad(tid) >= MAX_COURSES_PER_TERM) continue;
+
+      // 8-week sub-term limit
+      if (getLoad(tid) >= MAX_COURSES_PER_8W) continue;
+
+      // Full semester balancing limit (Fall / Spring max 4, Summer max 2)
+      const semId = termToSemesterId(tid);
+      const isSummer = season === 'SU';
+      const semLimit = isSummer ? MAX_COURSES_SUMMER : MAX_COURSES_PER_SEM;
+      const currentSemCourses = scheduled.filter(s => termToSemesterId(s.termId) === semId).length;
+      if (currentSemCourses >= semLimit) continue;
 
       const { ok } = prereqsDone(courseId, i);
       if (!ok) continue;
@@ -525,8 +538,8 @@ function buildDegreePlan({ catalogYear, currentTermId, allCourses, inProgressIds
   });
 
   return {
-    studentName: studentName || studentInfo?.name || '',
-    studentId: studentId || studentInfo?.id || '',
+    studentName: studentName || studentInfo?.name || 'Dummy Student',
+    studentId: studentId || studentInfo?.id || 'A000030323244',
     catalogYear,
     catalog,
     currentTermId,
@@ -592,28 +605,94 @@ function validateCourseMove(plan, courseId, targetSemId, sourceSemId) {
     };
   }
 
-  // 3. Prerequisite check: will prerequisites be completed prior to target semester?
-  const prereqs = getCourse(courseId)?.prereqs || [];
+  // 3. Prerequisite check (Upstream): Course CANNOT be moved to a semester if its prerequisite has not been completed in an earlier or the same semester
+  const courseObj = getCourse(courseId);
+  const prereqs = courseObj?.prereqs || [];
   const targetOrder = semesterSortOrder(targetSemId);
-  const unmetPrereqs = [];
 
-  prereqs.forEach(pid => {
-    if (pid === 'LAST_TERM') return;
-    if (plan.completed && plan.completed[pid]) return;
-    if (plan.inProgress && plan.inProgress[pid]) {
-      if (semesterSortOrder(curSemId) < targetOrder) return;
+  for (const pid of prereqs) {
+    if (pid === 'LAST_TERM') continue;
+    const pCourse = getCourse(pid) || { code: pid };
+
+    // Passed in previous semester or transfer credit?
+    if (plan.completed && plan.completed[pid]) {
+      const cDone = plan.completed[pid];
+      const doneSem = cDone.termId === 'TRANSFER' ? 'TRANSFER' : termToSemesterId(cDone.termId);
+      if (doneSem === 'TRANSFER' || semesterSortOrder(doneSem) <= targetOrder) {
+        continue; // Satisfied
+      }
     }
-    const semWhere = plan.semesters.find(s => (s.courses || []).some(c => c.id === pid));
-    if (semWhere && semesterSortOrder(semWhere.semId) < targetOrder) return;
-    unmetPrereqs.push(getCourse(pid)?.code || pid);
-  });
 
-  let warning = null;
-  if (unmetPrereqs.length > 0) {
-    warning = `Prerequisite Alert: ${getCourse(courseId)?.code || courseId} requires ${unmetPrereqs.join(', ')} which may not be completed prior to ${semesterTitle(targetSemId)}.`;
+    // Currently in-progress this term?
+    if (plan.inProgress && plan.inProgress[pid]) {
+      if (semesterSortOrder(curSemId) <= targetOrder) {
+        continue; // Satisfied (concurrent or earlier)
+      }
+    }
+
+    // Scheduled in degree plan?
+    const semWherePrereq = plan.semesters.find(s => (s.courses || []).some(c => c.id === pid));
+    if (semWherePrereq) {
+      const prereqOrder = semesterSortOrder(semWherePrereq.semId);
+      // Prerequisite must NEVER be placed after the course that requires it
+      if (prereqOrder > targetOrder) {
+        return {
+          ok: false,
+          reason: `Prerequisite Violation: ${courseObj?.code || courseId} requires ${pCourse.code}, which is scheduled in ${semWherePrereq.title || semesterTitle(semWherePrereq.semId)}. A prerequisite must be in an earlier semester or the same semester.`
+        };
+      }
+      // If prereqOrder <= targetOrder: satisfied (earlier or concurrent in same semester)
+      continue;
+    }
+
+    // Prerequisite missing completely
+    return {
+      ok: false,
+      reason: `Prerequisite Violation: ${courseObj?.code || courseId} requires ${pCourse.code}, which is not yet completed or scheduled.`
+    };
   }
 
-  return { ok: true, warning };
+  // 4. Prerequisite check (Downstream): A prerequisite must NEVER be placed after the course that requires it
+  for (const sem of plan.semesters) {
+    if (!sem.courses) continue;
+    const semOrder = semesterSortOrder(sem.semId);
+    for (const entry of sem.courses) {
+      if (entry.id === courseId) continue;
+      const downCourse = getCourse(entry.id);
+      if (downCourse && downCourse.prereqs && downCourse.prereqs.includes(courseId)) {
+        // downCourse requires courseId!
+        // If moving courseId to targetSemId places it AFTER downCourse (targetOrder > semOrder), reject!
+        if (targetOrder > semOrder) {
+          return {
+            ok: false,
+            reason: `Prerequisite Violation: Cannot move ${courseObj?.code || courseId} to ${semesterTitle(targetSemId)} because ${downCourse.code} is scheduled in ${sem.title || semesterTitle(sem.semId)} and requires it as a prerequisite. A prerequisite must never be placed after the course that requires it.`
+          };
+        }
+      }
+    }
+  }
+
+  // 5. Capstone Constraint: ICS 48900 must be in the final graduating semester
+  if (courseId === 'ICS48900') {
+    const laterCourse = plan.semesters.find(s => semesterSortOrder(s.semId) > targetOrder && (s.courses || []).some(c => c.id !== 'ICS48900' && (c.status === 'planned' || c.status === 'failed')));
+    if (laterCourse) {
+      return {
+        ok: false,
+        reason: `Prerequisite Violation: ICS 48900 Cybersecurity Capstone must be taken in your final graduating semester (${semesterTitle(laterCourse.semId)} still has remaining major coursework scheduled).`
+      };
+    }
+  } else {
+    // If moving another course past Capstone:
+    const capSem = plan.semesters.find(s => (s.courses || []).some(c => c.id === 'ICS48900'));
+    if (capSem && targetOrder > semesterSortOrder(capSem.semId)) {
+      return {
+        ok: false,
+        reason: `Prerequisite Violation: Cannot move ${courseObj?.code || courseId} after ICS 48900 Cybersecurity Capstone. All major coursework must be completed prior to or concurrently with Capstone.`
+      };
+    }
+  }
+
+  return { ok: true, warning: null };
 }
 
 // Move course in degree plan and recalculate graduation term

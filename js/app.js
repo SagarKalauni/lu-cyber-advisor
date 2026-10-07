@@ -82,7 +82,7 @@ const ADVISOR_KNOWLEDGE = {
 };
 
 function generateAdvisorNarration(plan) {
-  const name = plan.studentName ? plan.studentName.split(' ')[0] : 'there';
+  const name = (plan.studentName && !plan.studentName.toLowerCase().includes('dummy')) ? plan.studentName.split(' ')[0] : 'there';
   const gpa = plan.stats.cumGPA !== null ? parseFloat(plan.stats.cumGPA) : null;
   const gradTerm = plan.stats.graduationTerm ? semesterTitle(plan.stats.graduationTerm) : 'the planned semester';
 
@@ -743,24 +743,89 @@ function renderGEStatus(plan) {
   const el = $('ge-status-panel');
   if (!el) return;
 
-  const satisfied = plan.geStatus.filter(s => s.satisfied).length;
-  const total = plan.geStatus.filter(s => s.credits > 0).length;
+  const satisfiedList = plan.geStatus.filter(s => s.satisfied);
+  const remainingList = plan.geStatus.filter(s => !s.satisfied);
+  const totalSlots = plan.geStatus.filter(s => s.credits > 0).length;
+  const totalCredits = plan.geStatus.reduce((sum, s) => sum + (s.credits || 0), 0);
+  const satisfiedCredits = satisfiedList.reduce((sum, s) => sum + (s.credits || 0), 0);
+  const remainingCredits = remainingList.reduce((sum, s) => sum + (s.credits || 0), 0);
+  const pct = Math.min(100, Math.round((satisfiedCredits / (totalCredits || 1)) * 100));
 
   el.innerHTML = `
-    <h3>📋 General Education Requirements (${satisfied}/${total} satisfied)</h3>
-    <div class="ge-grid">
-      ${plan.geStatus.map(slot => `
-        <div class="ge-slot ${slot.satisfied ? 'ge-done' : 'ge-pending'}">
-          <span class="ge-icon">${slot.satisfied ? '✅' : '⬜'}</span>
-          <div class="ge-info">
-            <div class="ge-label">${slot.label}</div>
-            ${slot.satisfied && slot.satisfiedBy
-              ? `<div class="ge-satisfied-by">↳ ${slot.satisfiedBy.course || slot.satisfiedBy.description || 'Completed'} ${slot.satisfiedBy.termId && slot.satisfiedBy.termId !== 'TRANSFER' ? '(' + semesterTitle(slot.satisfiedBy.termId) + ')' : slot.satisfiedBy.termId === 'TRANSFER' ? '(Transfer)' : ''}</div>`
-              : `<div class="ge-note">${slot.note || ''}</div>`
-            }
+    <div class="ge-panel-header">
+      <div class="ge-panel-title-block">
+        <h3>📋 General Education Degree Requirements Audit</h3>
+        <p class="ge-panel-subtitle">
+          Lindenwood University requires <strong>${totalCredits} General Education credits</strong> across essential foundational disciplines.
+        </p>
+      </div>
+      <div class="ge-progress-pill">
+        ${satisfiedList.length} of ${totalSlots} Categories Satisfied (${satisfiedCredits} / ${totalCredits} Credits • ${pct}%)
+      </div>
+    </div>
+
+    <div class="ge-progress-track-wrapper">
+      <div class="ge-progress-track">
+        <div class="ge-progress-fill" style="width:${Math.max(6, pct)}%">${pct}% Completed</div>
+      </div>
+    </div>
+
+    <!-- 1. REMAINING GEN-ED REQUIREMENTS (PROMINENT AT TOP) -->
+    <div class="ge-section ge-remaining-section">
+      <div class="ge-section-header remaining-header">
+        <span class="ge-section-icon">⏳</span>
+        <h4>Remaining General Education Courses Required (${remainingList.length} Categories • ${remainingCredits} Credits Needed)</h4>
+      </div>
+      ${remainingList.length === 0 ? `
+        <div class="ge-all-satisfied-card">
+          <span style="font-size:1.5rem;">🎉</span>
+          <div>
+            <strong>Outstanding!</strong> All Lindenwood General Education requirements have been 100% satisfied.
           </div>
         </div>
-      `).join('')}
+      ` : `
+        <div class="ge-grid">
+          ${remainingList.map(slot => `
+            <div class="ge-slot ge-slot-remaining">
+              <div class="ge-slot-top">
+                <span class="ge-icon-badge badge-pending">⏳ TO BE COMPLETED</span>
+                <span class="ge-slot-cr">${slot.credits || 3} Credits</span>
+              </div>
+              <div class="ge-info">
+                <div class="ge-label">${slot.label}</div>
+                <div class="ge-note">
+                  💡 <em>Advising Guidance:</em> ${slot.note || 'Choose any approved Lindenwood General Education course in this category.'}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+
+    <!-- 2. SATISFIED GEN-ED REQUIREMENTS -->
+    <div class="ge-section ge-satisfied-section">
+      <div class="ge-section-header satisfied-header">
+        <span class="ge-section-icon">✅</span>
+        <h4>Satisfied General Education Requirements (${satisfiedList.length} Categories • ${satisfiedCredits} Credits Completed)</h4>
+      </div>
+      <div class="ge-grid">
+        ${satisfiedList.map(slot => `
+          <div class="ge-slot ge-slot-done">
+            <div class="ge-slot-top">
+              <span class="ge-icon-badge badge-done">✅ SATISFIED</span>
+              <span class="ge-slot-cr">${slot.credits || 3} Credits</span>
+            </div>
+            <div class="ge-info">
+              <div class="ge-label">${slot.label}</div>
+              <div class="ge-satisfied-by">
+                ↳ <strong>${slot.satisfiedBy?.course || slot.satisfiedBy?.description || 'Completed'}</strong>
+                ${slot.satisfiedBy?.termId && slot.satisfiedBy.termId !== 'TRANSFER' ? '— ' + semesterTitle(slot.satisfiedBy.termId) : (slot.satisfiedBy?.termId === 'TRANSFER' ? '— Prior Transfer Credit' : '')}
+              </div>
+            </div>
+          </div>
+        `).join('')}
+      </div>
     </div>
   `;
 }
