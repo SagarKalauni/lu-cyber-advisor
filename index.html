@@ -70,7 +70,7 @@
         🚀 Start Degree Plan
       </button>
       <a href="#" class="btn btn-secondary" onclick="startWyattDemo(); return false;">
-        🎓 Load Wyatt Justus Demo (Excel Schedule)
+        🎓 Load Wyatt Justus Demo (PDF Transcript + Excel Schedule)
       </a>
       <a href="#" class="btn btn-outline" onclick="startDemo(); return false;">
         👀 Load Dummy Student Demo (Transcript)
@@ -152,24 +152,61 @@
       </div>
     </div>
 
-    <!-- ─── STEP 2: Course Schedule (Excel) / Transcript (PDF) ─── -->
+    <!-- ─── STEP 2: Dual File Input: Transcript (PDF) & Course Schedule (Excel) ─── -->
     <div class="wizard-step" id="wizard-step-2">
-      <h2 class="wizard-step-title">Step 2: Student Course Schedule (Excel) or Transcript (PDF)</h2>
+      <h2 class="wizard-step-title">Step 2: Upload Student Transcript (PDF) &amp; Course Schedule (Excel)</h2>
       <p class="wizard-step-desc">
-        Drop the student's <strong>StudentCourseSchedules Excel (.xlsx)</strong> export or <strong>Unofficial Transcript PDF</strong> below.
-        Excel schedules contain <strong>all Completed, Current, and Scheduled courses</strong> with exact grades, terms, and credits!
+        For maximum accuracy, upload <strong>both the Unofficial Transcript (PDF)</strong> (for prior transfer credits, GPA, and historical grades) 
+        and the <strong>Course Schedule Export (Excel .xlsx)</strong> (for active current enrollments and future scheduled courses). 
+        The system will reconcile and merge both into a unified Program Planning Guide (PPG).
       </p>
 
-      <!-- Drop zone -->
-      <div class="drop-zone" id="drop-zone">
-        <div class="drop-zone-icon">📊</div>
-        <h3>Drop Student Schedule Excel (.xlsx) or Transcript (PDF) Here</h3>
-        <p>or click anywhere in this box to select your file (.xlsx, .xls, .pdf supported)</p>
-        <div class="drop-zone-or">— OR —</div>
-        <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); document.getElementById('file-input').click();">
-          Browse Excel (.xlsx) / PDF Files
-        </button>
-        <input type="file" id="file-input" accept=".xlsx,.xls,.pdf" class="file-input-hidden">
+      <!-- Dual Drop Grid -->
+      <div class="dual-upload-grid">
+        <!-- Card 1: PDF Transcript -->
+        <div class="upload-box-card" id="card-upload-pdf">
+          <div class="upload-card-header">
+            <span class="upload-card-icon">📄</span>
+            <div>
+              <div class="upload-card-title">1. Unofficial Transcript (PDF)</div>
+              <div class="upload-card-subtitle">Prior coursework, transfer credits &amp; official GPA</div>
+            </div>
+          </div>
+          <div class="drop-zone drop-zone-split" id="drop-zone-pdf">
+            <div class="drop-zone-inner-icon">📑</div>
+            <h4>Drop Transcript PDF Here</h4>
+            <p>or click to browse (.pdf)</p>
+            <input type="file" id="file-input-pdf" accept=".pdf" class="file-input-hidden">
+          </div>
+          <div class="file-status-pill" id="status-pill-pdf">
+            <span class="status-indicator">⚪</span> <span id="status-text-pdf">Awaiting PDF transcript...</span>
+          </div>
+        </div>
+
+        <!-- Card 2: Excel Schedule -->
+        <div class="upload-box-card" id="card-upload-excel">
+          <div class="upload-card-header">
+            <span class="upload-card-icon">📊</span>
+            <div>
+              <div class="upload-card-title">2. Course Schedule Export (Excel)</div>
+              <div class="upload-card-subtitle">Active enrollments &amp; upcoming scheduled courses</div>
+            </div>
+          </div>
+          <div class="drop-zone drop-zone-split" id="drop-zone-excel">
+            <div class="drop-zone-inner-icon">📈</div>
+            <h4>Drop Schedule Excel (.xlsx) Here</h4>
+            <p>or click to browse (.xlsx, .xls)</p>
+            <input type="file" id="file-input-excel" accept=".xlsx,.xls" class="file-input-hidden">
+          </div>
+          <div class="file-status-pill" id="status-pill-excel">
+            <span class="status-indicator">⚪</span> <span id="status-text-excel">Awaiting Excel schedule...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Unified drop alternative box -->
+      <div class="dual-drop-combined" id="drop-zone-combined">
+        💡 <em>Shortcut: You can also drag &amp; drop <strong>both files at the same time</strong> right here into this window!</em>
       </div>
 
       <div class="parse-status" id="parse-status"></div>
@@ -196,9 +233,9 @@
         <button class="btn btn-outline step-back-btn">← Back</button>
         <div style="display:flex; gap:.75rem;">
           <button id="btn-skip-transcript" class="btn btn-outline">
-            Skip (No transcript available)
+            Skip (No files available)
           </button>
-          <button id="btn-step3-next" class="btn btn-outline">
+          <button id="btn-step3-next" class="btn btn-maroon">
             Review / Add Extra Courses →
           </button>
         </div>

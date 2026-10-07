@@ -11,7 +11,9 @@ const AppState = {
   studentName: '',
   studentId: '',
   transcriptText: '',
-  parsedTranscript: null,
+  transcriptResult: null,   // From PDF Transcript
+  scheduleResult: null,     // From Excel Course Schedules
+  parsedTranscript: null,   // Reconciled unified dataset
   inProgressCourses: [],
   currentTermId: detectCurrentTerm(),
   plan: null,
@@ -172,28 +174,63 @@ function initStep2() {
   });
 }
 
-// ── STEP 3: TRANSCRIPT UPLOAD & AUTO AUDIT ────────────────
+// ── STEP 3: DUAL FILE UPLOAD & RECONCILIATION ──────────────
 function initStep3() {
-  const dropZone = $('drop-zone');
-  const fileInput = $('file-input');
+  const dropPdf = $('drop-zone-pdf');
+  const fileInputPdf = $('file-input-pdf');
+  const dropExcel = $('drop-zone-excel');
+  const fileInputExcel = $('file-input-excel');
+  const dropCombined = $('drop-zone-combined');
   const statusEl = $('parse-status');
   const manualArea = $('manual-transcript');
   const toggleManual = $('btn-toggle-manual');
 
-  if (dropZone) {
-    dropZone.addEventListener('click', () => fileInput?.click());
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
+  // PDF Dropzone
+  if (dropPdf) {
+    dropPdf.addEventListener('click', () => fileInputPdf?.click());
+    dropPdf.addEventListener('dragover', e => { e.preventDefault(); dropPdf.classList.add('drag-over'); });
+    dropPdf.addEventListener('dragleave', () => dropPdf.classList.remove('drag-over'));
+    dropPdf.addEventListener('drop', e => {
       e.preventDefault();
-      dropZone.classList.remove('drag-over');
-      if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+      dropPdf.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) handlePdfFile(e.dataTransfer.files[0]);
+    });
+  }
+  if (fileInputPdf) {
+    fileInputPdf.addEventListener('change', e => {
+      if (e.target.files[0]) handlePdfFile(e.target.files[0]);
     });
   }
 
-  if (fileInput) {
-    fileInput.addEventListener('change', e => {
-      if (e.target.files[0]) handleFile(e.target.files[0]);
+  // Excel Dropzone
+  if (dropExcel) {
+    dropExcel.addEventListener('click', () => fileInputExcel?.click());
+    dropExcel.addEventListener('dragover', e => { e.preventDefault(); dropExcel.classList.add('drag-over'); });
+    dropExcel.addEventListener('dragleave', () => dropExcel.classList.remove('drag-over'));
+    dropExcel.addEventListener('drop', e => {
+      e.preventDefault();
+      dropExcel.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) handleExcelFile(e.dataTransfer.files[0]);
+    });
+  }
+  if (fileInputExcel) {
+    fileInputExcel.addEventListener('change', e => {
+      if (e.target.files[0]) handleExcelFile(e.target.files[0]);
+    });
+  }
+
+  // Combined Drop Area (Accepts both at once)
+  if (dropCombined) {
+    dropCombined.addEventListener('dragover', e => { e.preventDefault(); dropCombined.classList.add('drag-over'); });
+    dropCombined.addEventListener('dragleave', () => dropCombined.classList.remove('drag-over'));
+    dropCombined.addEventListener('drop', e => {
+      e.preventDefault();
+      dropCombined.classList.remove('drag-over');
+      const files = Array.from(e.dataTransfer.files);
+      files.forEach(f => {
+        if (f.name.endsWith('.pdf')) handlePdfFile(f);
+        else if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) handleExcelFile(f);
+      });
     });
   }
 
@@ -204,50 +241,139 @@ function initStep3() {
     });
   }
 
-  async function handleFile(file) {
-    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
-    const isPdf = file.name.endsWith('.pdf');
-
-    if (!isExcel && !isPdf) {
-      toast('Please upload an Excel (.xlsx/.xls) or PDF (.pdf) file.', 'error');
+  async function handlePdfFile(file) {
+    if (!file.name.endsWith('.pdf')) {
+      toast('Please upload a PDF (.pdf) transcript.', 'error');
       return;
     }
+    const pill = $('status-pill-pdf');
+    const textSpan = $('status-text-pdf');
+    if (pill) pill.className = 'file-status-pill status-loading';
+    if (textSpan) textSpan.textContent = `Reading ${file.name}...`;
 
-    if (isExcel) {
-      statusEl.textContent = '📊 Reading student schedule Excel workbook (.xlsx)...';
-      statusEl.className = 'parse-status parsing';
+    try {
+      const text = await extractTextFromPDF(file);
+      AppState.transcriptText = text;
+      const result = parseTranscript(text);
+      AppState.transcriptResult = result;
 
-      try {
-        const result = await parseScheduleExcel(file);
-        processParsedResult(result, 'Excel Schedule');
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = '❌ Could not parse Excel file: ' + err.message;
-        statusEl.className = 'parse-status error';
-        if (manualArea) manualArea.style.display = 'block';
-      }
-    } else {
-      statusEl.textContent = '📄 Reading your transcript with two-column layout parsing...';
-      statusEl.className = 'parse-status parsing';
+      if (pill) pill.className = 'file-status-pill status-success';
+      if (textSpan) textSpan.textContent = `✅ ${file.name} (${result.courses.length} courses audited, GPA: ${result.studentInfo.gpa || 'N/A'})`;
+      $('card-upload-pdf')?.classList.add('uploaded-ready');
+      toast(`Loaded PDF Transcript: ${result.courses.length} courses!`, 'success');
 
-      try {
-        const text = await extractTextFromPDF(file);
-        AppState.transcriptText = text;
-        const result = parseTranscript(text);
-        processParsedResult(result, 'Transcript PDF');
-      } catch (err) {
-        console.error(err);
-        statusEl.textContent = '❌ Could not parse PDF automatically. Please paste transcript text below.';
-        statusEl.className = 'parse-status error';
-        if (manualArea) manualArea.style.display = 'block';
-      }
+      reconcileAndApply();
+    } catch (err) {
+      console.error(err);
+      if (pill) pill.className = 'file-status-pill status-error';
+      if (textSpan) textSpan.textContent = `❌ PDF parse failed: ${err.message}`;
+      toast('Could not parse PDF. Paste text if needed.', 'error');
     }
   }
 
-  function processParsedResult(result, sourceLabel) {
+  async function handleExcelFile(file) {
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      toast('Please upload an Excel (.xlsx/.xls) schedule file.', 'error');
+      return;
+    }
+    const pill = $('status-pill-excel');
+    const textSpan = $('status-text-excel');
+    if (pill) pill.className = 'file-status-pill status-loading';
+    if (textSpan) textSpan.textContent = `Reading ${file.name}...`;
+
+    try {
+      const result = await parseScheduleExcel(file);
+      AppState.scheduleResult = result;
+
+      if (pill) pill.className = 'file-status-pill status-success';
+      const cur = result.courses.filter(c => c.isCurrent).length;
+      const sch = result.courses.filter(c => c.isScheduled).length;
+      if (textSpan) textSpan.textContent = `✅ ${file.name} (${result.courses.length} courses, ${cur} current, ${sch} scheduled)`;
+      $('card-upload-excel')?.classList.add('uploaded-ready');
+      toast(`Loaded Excel Schedule: ${result.courses.length} courses!`, 'success');
+
+      reconcileAndApply();
+    } catch (err) {
+      console.error(err);
+      if (pill) pill.className = 'file-status-pill status-error';
+      if (textSpan) textSpan.textContent = `❌ Excel parse failed: ${err.message}`;
+      toast('Could not parse Excel schedule: ' + err.message, 'error');
+    }
+  }
+
+  function reconcileAndApply() {
+    const pdfRes = AppState.transcriptResult;
+    const xlsRes = AppState.scheduleResult;
+
+    if (!pdfRes && !xlsRes) return;
+
+    let mergedResult;
+    if (pdfRes && !xlsRes) {
+      mergedResult = pdfRes;
+    } else if (!pdfRes && xlsRes) {
+      mergedResult = xlsRes;
+    } else {
+      // Reconcile BOTH files!
+      mergedResult = reconcilePdfAndExcel(pdfRes, xlsRes);
+    }
+
+    processParsedResult(mergedResult);
+  }
+
+  function reconcilePdfAndExcel(pdfRes, xlsRes) {
+    // Merge courses intelligently:
+    // Excel contains full current and scheduled courses with accurate terms (e.g. Fall I, Fall II)
+    // PDF contains transfer credits, letter grades, and official cumulative GPA
+    const courseMap = new Map();
+
+    // 1. Add all PDF courses first
+    (pdfRes.courses || []).forEach(c => {
+      const norm = (c.code || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (!norm) return;
+      courseMap.set(norm, { ...c, source: 'PDF' });
+    });
+
+    // 2. Overlay / Merge Excel courses
+    (xlsRes.courses || []).forEach(c => {
+      const norm = (c.code || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
+      if (!norm) return;
+
+      if (courseMap.has(norm)) {
+        const existing = courseMap.get(norm);
+        // If course is currently enrolled or scheduled in Excel, preserve those flags!
+        courseMap.set(norm, {
+          ...existing,
+          ...c,
+          // If PDF had a confirmed passing grade or transfer, keep earned credits
+          earnedCredits: c.earnedCredits > 0 ? c.earnedCredits : existing.earnedCredits,
+          passed: c.passed || existing.passed,
+          isTransfer: existing.isTransfer || c.isTransfer,
+          source: 'RECONCILED'
+        });
+      } else {
+        courseMap.set(norm, { ...c, source: 'EXCEL' });
+      }
+    });
+
+    const mergedCourses = Array.from(courseMap.values());
+
+    // Best student info
+    const studentInfo = {
+      name: xlsRes.studentInfo?.name || pdfRes.studentInfo?.name || '',
+      id: xlsRes.studentInfo?.id || pdfRes.studentInfo?.id || '',
+      program: xlsRes.studentInfo?.program || pdfRes.studentInfo?.program || 'Cybersecurity',
+      gpa: pdfRes.studentInfo?.gpa || xlsRes.studentInfo?.gpa || '3.00',
+      totalEarned: Math.max(pdfRes.studentInfo?.totalEarned || 0, xlsRes.studentInfo?.totalEarned || 0),
+      totalCourses: mergedCourses.length
+    };
+
+    return { courses: mergedCourses, studentInfo };
+  }
+
+  function processParsedResult(result) {
     AppState.parsedTranscript = result;
 
-    // Auto-populate student info from transcript / schedule
+    // Auto-populate student info
     if (result.studentInfo.name) {
       AppState.studentName = result.studentInfo.name;
       if ($('input-name')) $('input-name').value = result.studentInfo.name;
@@ -264,7 +390,7 @@ function initStep3() {
       if ($('select-catalog')) $('select-catalog').value = detectedCat;
     }
 
-    // Auto-extract ALL currently registered / scheduled courses directly
+    // Auto-extract ALL currently registered / scheduled courses
     const registeredOnRecord = result.courses.filter(c => c.isRegistered).map(c => c.code);
     AppState.inProgressCourses = [...new Set(registeredOnRecord)];
 
@@ -275,15 +401,24 @@ function initStep3() {
     const currentCount = result.courses.filter(c => c.isCurrent).length;
     const scheduledCount = result.courses.filter(c => c.isScheduled).length;
 
-    statusEl.textContent = `✅ Successfully extracted all courses from ${sourceLabel}: ${result.courses.length} total (${completedCount} completed, ${currentCount} current, ${scheduledCount} scheduled).`;
-    statusEl.className = 'parse-status success';
-    toast(`Audited ${result.courses.length} courses from ${sourceLabel}!`, 'success');
+    const sources = [];
+    if (AppState.transcriptResult) sources.push('PDF Transcript');
+    if (AppState.scheduleResult) sources.push('Excel Schedule');
+
+    if (statusEl) {
+      statusEl.textContent = `✅ Successfully reconciled from ${sources.join(' + ')}: ${result.courses.length} total unique courses (${completedCount} completed, ${currentCount} current, ${scheduledCount} scheduled).`;
+      statusEl.className = 'parse-status success';
+    }
   }
 
   function processTranscriptText(text) {
     AppState.transcriptText = text;
     const result = parseTranscript(text);
-    processParsedResult(result, 'Pasted Transcript');
+    AppState.transcriptResult = result;
+    $('card-upload-pdf')?.classList.add('uploaded-ready');
+    const textSpan = $('status-text-pdf');
+    if (textSpan) textSpan.textContent = `✅ Pasted text (${result.courses.length} courses audited)`;
+    processParsedResult(result);
   }
 
   $('btn-parse-manual')?.addEventListener('click', () => {
@@ -796,6 +931,14 @@ function renderGEStatus(plan) {
                 <div class="ge-note">
                   💡 <em>Advising Guidance:</em> ${slot.note || 'Choose any approved Lindenwood General Education course in this category.'}
                 </div>
+                ${slot.approvedCourses && slot.approvedCourses.length > 0 ? `
+                  <div class="ge-approved-container">
+                    <div class="ge-approved-title">🎯 Recommended Lindenwood Courses:</div>
+                    <div class="ge-approved-list">
+                      ${slot.approvedCourses.map(c => `<span class="ge-course-pill">${c}</span>`).join('')}
+                    </div>
+                  </div>
+                ` : ''}
               </div>
             </div>
           `).join('')}
