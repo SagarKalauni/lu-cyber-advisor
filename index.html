@@ -175,9 +175,14 @@
           <div class="drop-zone drop-zone-split" id="drop-zone-pdf">
             <div class="drop-zone-inner-icon">📑</div>
             <h4>Drop Transcript PDF Here</h4>
-            <p>or click to browse (.pdf)</p>
-            <input type="file" id="file-input-pdf" accept=".pdf" class="file-input-hidden">
+            <p>or drag &amp; drop file here</p>
+            <div style="margin-top:0.75rem;">
+              <button type="button" class="btn btn-outline btn-sm" id="btn-browse-pdf">
+                📂 Browse PDF File
+              </button>
+            </div>
           </div>
+          <input type="file" id="file-input-pdf" accept=".pdf" class="file-input-hidden">
           <div class="file-status-pill" id="status-pill-pdf">
             <span class="status-indicator">⚪</span> <span id="status-text-pdf">Awaiting PDF transcript...</span>
           </div>
@@ -195,9 +200,14 @@
           <div class="drop-zone drop-zone-split" id="drop-zone-excel">
             <div class="drop-zone-inner-icon">📈</div>
             <h4>Drop Schedule Excel (.xlsx) Here</h4>
-            <p>or click to browse (.xlsx, .xls)</p>
-            <input type="file" id="file-input-excel" accept=".xlsx,.xls" class="file-input-hidden">
+            <p>or drag &amp; drop file here</p>
+            <div style="margin-top:0.75rem;">
+              <button type="button" class="btn btn-outline btn-sm" id="btn-browse-excel">
+                📂 Browse Excel File
+              </button>
+            </div>
           </div>
+          <input type="file" id="file-input-excel" accept=".xlsx,.xls" class="file-input-hidden">
           <div class="file-status-pill" id="status-pill-excel">
             <span class="status-indicator">⚪</span> <span id="status-text-excel">Awaiting Excel schedule...</span>
           </div>

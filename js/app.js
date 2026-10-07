@@ -185,9 +185,15 @@ function initStep3() {
   const manualArea = $('manual-transcript');
   const toggleManual = $('btn-toggle-manual');
 
-  // PDF Dropzone
+  // PDF Dropzone & Browse Button
+  $('btn-browse-pdf')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInputPdf?.click();
+  });
   if (dropPdf) {
-    dropPdf.addEventListener('click', () => fileInputPdf?.click());
+    dropPdf.addEventListener('click', (e) => {
+      fileInputPdf?.click();
+    });
     dropPdf.addEventListener('dragover', e => { e.preventDefault(); dropPdf.classList.add('drag-over'); });
     dropPdf.addEventListener('dragleave', () => dropPdf.classList.remove('drag-over'));
     dropPdf.addEventListener('drop', e => {
@@ -202,9 +208,15 @@ function initStep3() {
     });
   }
 
-  // Excel Dropzone
+  // Excel Dropzone & Browse Button
+  $('btn-browse-excel')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    fileInputExcel?.click();
+  });
   if (dropExcel) {
-    dropExcel.addEventListener('click', () => fileInputExcel?.click());
+    dropExcel.addEventListener('click', (e) => {
+      fileInputExcel?.click();
+    });
     dropExcel.addEventListener('dragover', e => { e.preventDefault(); dropExcel.classList.add('drag-over'); });
     dropExcel.addEventListener('dragleave', () => dropExcel.classList.remove('drag-over'));
     dropExcel.addEventListener('drop', e => {
