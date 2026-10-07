@@ -497,6 +497,28 @@ function buildDegreePlan({ catalogYear, currentTermId, allCourses, inProgressIds
   if (capEntry) graduationTerm = termToSemesterId(capEntry.termId);
   else if (inProgress['ICS48900']) graduationTerm = termToSemesterId(currentTermId);
 
+  // Ensure future regular semesters (Fall & Spring) exist up through graduation + 1 year
+  // so advisors have available drop zones to customize their schedule within the 15-credit limit
+  const curSemId = termToSemesterId(currentTermId);
+  const startYr = termYear(currentTermId) || 2026;
+  const gradYr = graduationTerm ? termYear(graduationTerm) : startYr + 2;
+  const maxYr = Math.max(gradYr + 1, startYr + 3);
+
+  for (let y = startYr; y <= maxYr; y++) {
+    ['SPRING', 'FALL'].forEach(season => {
+      const sId = `${season}_${y}`;
+      if (semesterSortOrder(sId) >= semesterSortOrder(curSemId)) {
+        if (!semesterMap[sId]) {
+          semesterMap[sId] = {
+            semId: sId,
+            title: semesterTitle(sId),
+            courses: []
+          };
+        }
+      }
+    });
+  }
+
   // Sort semesters chronologically
   const semesters = Object.values(semesterMap).sort((a,b) => {
     return semesterSortOrder(a.semId) - semesterSortOrder(b.semId);
@@ -530,4 +552,115 @@ function buildDegreePlan({ catalogYear, currentTermId, allCourses, inProgressIds
     geCompleted,
     requiredIds
   };
+}
+
+// ── CUSTOMIZATION & DRAG-AND-DROP HELPERS ──────────────────
+// Validates whether courseId can be moved from sourceSemId into targetSemId
+function validateCourseMove(plan, courseId, targetSemId, sourceSemId) {
+  if (targetSemId === sourceSemId) {
+    return { ok: false, reason: 'Course is already in this semester.' };
+  }
+
+  // Disallow moving into past completed terms or transfer box
+  const curSemId = termToSemesterId(plan.currentTermId);
+  if (targetSemId === 'TRANSFER' || semesterSortOrder(targetSemId) < semesterSortOrder(curSemId)) {
+    return { ok: false, reason: 'Cannot move courses into past completed semesters.' };
+  }
+
+  // 1. Offering Constraint (Fall vs Spring vs Summer)
+  if (!isCourseOfferedInSemester(courseId, targetSemId)) {
+    const course = getCourse(courseId);
+    const offeredDesc = getCourseOfferedDescription(courseId);
+    const targetTitle = semesterTitle(targetSemId);
+    return {
+      ok: false,
+      reason: `Offering Constraint: ${course?.code || courseId} is NOT offered in ${targetTitle}. It is offered in: ${offeredDesc}.`
+    };
+  }
+
+  // 2. Maximum 15 Credit Hours per Semester Constraint
+  const targetSem = plan.semesters.find(s => s.semId === targetSemId);
+  const currentTargetCredits = (targetSem?.courses || []).reduce((sum, c) => {
+    return sum + (c.course?.credits || getCourse(c.id)?.credits || 3);
+  }, 0);
+  const courseCredits = getCourse(courseId)?.credits || 3;
+
+  if (currentTargetCredits + courseCredits > 15) {
+    return {
+      ok: false,
+      reason: `Credit Limit Exceeded: Maximum 15 credit hours allowed per semester. ${semesterTitle(targetSemId)} currently has ${currentTargetCredits} credits (+${courseCredits} = ${currentTargetCredits + courseCredits} credits).`
+    };
+  }
+
+  // 3. Prerequisite check: will prerequisites be completed prior to target semester?
+  const prereqs = getCourse(courseId)?.prereqs || [];
+  const targetOrder = semesterSortOrder(targetSemId);
+  const unmetPrereqs = [];
+
+  prereqs.forEach(pid => {
+    if (pid === 'LAST_TERM') return;
+    if (plan.completed && plan.completed[pid]) return;
+    if (plan.inProgress && plan.inProgress[pid]) {
+      if (semesterSortOrder(curSemId) < targetOrder) return;
+    }
+    const semWhere = plan.semesters.find(s => (s.courses || []).some(c => c.id === pid));
+    if (semWhere && semesterSortOrder(semWhere.semId) < targetOrder) return;
+    unmetPrereqs.push(getCourse(pid)?.code || pid);
+  });
+
+  let warning = null;
+  if (unmetPrereqs.length > 0) {
+    warning = `Prerequisite Alert: ${getCourse(courseId)?.code || courseId} requires ${unmetPrereqs.join(', ')} which may not be completed prior to ${semesterTitle(targetSemId)}.`;
+  }
+
+  return { ok: true, warning };
+}
+
+// Move course in degree plan and recalculate graduation term
+function moveCourseInDegreePlan(plan, courseId, targetSemId, sourceSemId) {
+  const sourceSem = plan.semesters.find(s => s.semId === sourceSemId);
+  const targetSem = plan.semesters.find(s => s.semId === targetSemId);
+
+  if (!sourceSem || !targetSem) return false;
+
+  const idx = sourceSem.courses.findIndex(c => c.id === courseId);
+  if (idx === -1) return false;
+
+  const [entry] = sourceSem.courses.splice(idx, 1);
+
+  // Determine appropriate subTerm and termId for target semester
+  const subTerm = getCourseSubTermForSemester(courseId, targetSemId);
+  const parts = targetSemId.split('_');
+  const season = parts[0];
+  const yr = parts[1];
+
+  let termCode = 'F1';
+  if (season === 'FALL') termCode = subTerm === 'Term II' ? 'F2' : 'F1';
+  else if (season === 'SPRING') termCode = subTerm === 'Term II' ? 'SP2' : 'SP1';
+  else if (season === 'SUMMER') termCode = 'SU';
+
+  entry.subTerm = subTerm;
+  entry.termId = `${termCode}_${yr}`;
+
+  targetSem.courses.push(entry);
+
+  // Update plan.scheduled
+  const sch = (plan.scheduled || []).find(s => s.id === courseId);
+  if (sch) {
+    sch.termId = entry.termId;
+    sch.subTerm = subTerm;
+  }
+
+  // Recalculate graduation term (semester with ICS 48900 or last semester with courses)
+  const capSem = plan.semesters.find(s => (s.courses || []).some(c => c.id === 'ICS48900'));
+  if (capSem) {
+    plan.stats.graduationTerm = capSem.semId;
+  } else {
+    const activeSems = plan.semesters.filter(s => s.semId !== 'TRANSFER' && s.courses && s.courses.length > 0);
+    if (activeSems.length > 0) {
+      plan.stats.graduationTerm = activeSems[activeSems.length - 1].semId;
+    }
+  }
+
+  return true;
 }

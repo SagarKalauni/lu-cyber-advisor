@@ -126,6 +126,60 @@ function detectCurrentTerm() {
   return `${sub}_${yr}`;
 }
 
+// ── COURSE OFFERING CHECKERS (IT CYBER FUTURE PLANNING MATRIX) ──
+// Check if course is offered in a target semester (FALL, SPRING, SUMMER)
+function isCourseOfferedInSemester(courseId, semId) {
+  const c = getCourse(courseId);
+  if (!c || !c.offered || c.offered.length === 0) return true; // GE or elective
+  const parts = (semId || '').split('_');
+  const season = parts[0]; // 'FALL', 'SPRING', 'SUMMER'
+  if (season === 'FALL') {
+    return c.offered.includes('F1') || c.offered.includes('F2');
+  }
+  if (season === 'SPRING') {
+    return c.offered.includes('SP1') || c.offered.includes('SP2');
+  }
+  if (season === 'SUMMER') {
+    return c.offered.includes('SU');
+  }
+  return false;
+}
+
+// User-friendly text of terms where course is offered
+function getCourseOfferedDescription(courseId) {
+  const c = getCourse(courseId);
+  if (!c || !c.offered) return 'Any term';
+  const labels = c.offered.map(t => {
+    if (t === 'F1') return 'Fall I';
+    if (t === 'F2') return 'Fall II';
+    if (t === 'SP1') return 'Spring I';
+    if (t === 'SP2') return 'Spring II';
+    if (t === 'SU') return 'Summer';
+    return t;
+  });
+  return labels.join(', ');
+}
+
+// Automatically resolve best sub-term tag when moved to semester
+function getCourseSubTermForSemester(courseId, semId) {
+  const c = getCourse(courseId);
+  const parts = (semId || '').split('_');
+  const season = parts[0];
+  if (!c || !c.offered) return season === 'SUMMER' ? 'Summer' : 'Term I';
+  if (season === 'FALL') {
+    if (c.offered.includes('F1') && !c.offered.includes('F2')) return 'Term I';
+    if (c.offered.includes('F2') && !c.offered.includes('F1')) return 'Term II';
+    return 'Term I';
+  }
+  if (season === 'SPRING') {
+    if (c.offered.includes('SP1') && !c.offered.includes('SP2')) return 'Term I';
+    if (c.offered.includes('SP2') && !c.offered.includes('SP1')) return 'Term II';
+    return 'Term I';
+  }
+  if (season === 'SUMMER') return 'Summer';
+  return 'Term I';
+}
+
 // ── MAJOR COURSES ──────────────────────────────────────────
 // Each entry: code, name, credits, section, prereqs[], offered[], description, importance, planningNote
 // NOTE: ICS 41100, ICS 41400, ICS 32600, ICS 32601 are NO LONGER OFFERED.

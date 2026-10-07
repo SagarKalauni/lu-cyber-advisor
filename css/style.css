@@ -484,7 +484,65 @@ input, select, textarea { font-family: inherit; }
 .sem-title   { font-weight: 800; font-size: .95rem; color: var(--gray-900); }
 .sem-credits { background: var(--lu-maroon); color: var(--white); border-radius: 20px; padding: 2px 10px; font-size: .8rem; font-weight: 800; }
 
-.sem-courses { padding: .85rem; display: flex; flex-direction: column; gap: .6rem; }
+.sem-cr-pill {
+  border-radius: 20px;
+  padding: 3px 10px;
+  font-size: .78rem;
+  font-weight: 800;
+  background: var(--lu-maroon);
+  color: var(--white);
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.sem-cr-pill.cr-max { background: #D97706; } /* 15 cr exact limit */
+.sem-cr-pill.cr-over { background: #DC2626; } /* over 15 cr */
+
+.sem-courses { padding: .85rem; display: flex; flex-direction: column; gap: .6rem; min-height: 50px; }
+
+/* Drag and Drop Target States */
+.semester-card.drag-target-valid {
+  border: 2px dashed #16A34A !important;
+  background-color: #F0FDF4 !important;
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.25) !important;
+  transform: translateY(-2px);
+}
+.semester-card.drag-target-invalid {
+  border: 2px dashed #DC2626 !important;
+  background-color: #FEF2F2 !important;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.25) !important;
+}
+
+.sem-empty-dropzone {
+  border: 2px dashed var(--gray-300);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem 0.75rem;
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--gray-500);
+  background: var(--gray-50);
+  transition: var(--transition);
+}
+.semester-card.drag-target-valid .sem-empty-dropzone {
+  border-color: #16A34A;
+  color: #15803D;
+  background: rgba(22, 163, 74, 0.08);
+}
+
+.drag-hint-banner {
+  background: #EFF6FF;
+  border: 1px solid #BFDBFE;
+  border-left: 4px solid #2563EB;
+  border-radius: var(--radius-sm);
+  padding: 0.85rem 1.25rem;
+  margin-bottom: 1.5rem;
+  font-size: 0.9rem;
+  color: #1E40AF;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
 
 /* ── COURSE CHIPS ──────────────────────────────────────── */
 .course-chip {
@@ -497,6 +555,31 @@ input, select, textarea { font-family: inherit; }
   flex-wrap: wrap;
 }
 .course-chip:hover { transform: translateX(3px); box-shadow: var(--shadow-sm); }
+
+.course-chip.is-draggable {
+  cursor: grab;
+  user-select: none;
+}
+.course-chip.is-draggable:active {
+  cursor: grabbing;
+}
+.course-chip.is-dragging {
+  opacity: 0.35;
+  transform: scale(0.96);
+  box-shadow: 0 8px 16px rgba(0,0,0,0.18);
+}
+.drag-handle {
+  cursor: grab;
+  color: #94A3B8;
+  margin-right: 4px;
+  font-size: 1rem;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+}
+.course-chip:hover .drag-handle {
+  color: #2563EB;
+}
 
 .chip-main { display: flex; align-items: center; gap: .5rem; flex: 1; flex-wrap: wrap; }
 .chip-icon  { font-size: 1.05rem; flex-shrink: 0; }

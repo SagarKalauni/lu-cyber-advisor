@@ -205,30 +205,49 @@ function initStep3() {
   }
 
   async function handleFile(file) {
-    if (!file.name.endsWith('.pdf')) {
-      toast('Please upload a PDF file.', 'error');
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+    const isPdf = file.name.endsWith('.pdf');
+
+    if (!isExcel && !isPdf) {
+      toast('Please upload an Excel (.xlsx/.xls) or PDF (.pdf) file.', 'error');
       return;
     }
-    statusEl.textContent = '📄 Reading your transcript with two-column layout parsing...';
-    statusEl.className = 'parse-status parsing';
 
-    try {
-      const text = await extractTextFromPDF(file);
-      processTranscriptText(text);
-    } catch (err) {
-      console.error(err);
-      statusEl.textContent = '❌ Could not parse PDF automatically. Please paste transcript text below.';
-      statusEl.className = 'parse-status error';
-      if (manualArea) manualArea.style.display = 'block';
+    if (isExcel) {
+      statusEl.textContent = '📊 Reading student schedule Excel workbook (.xlsx)...';
+      statusEl.className = 'parse-status parsing';
+
+      try {
+        const result = await parseScheduleExcel(file);
+        processParsedResult(result, 'Excel Schedule');
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = '❌ Could not parse Excel file: ' + err.message;
+        statusEl.className = 'parse-status error';
+        if (manualArea) manualArea.style.display = 'block';
+      }
+    } else {
+      statusEl.textContent = '📄 Reading your transcript with two-column layout parsing...';
+      statusEl.className = 'parse-status parsing';
+
+      try {
+        const text = await extractTextFromPDF(file);
+        AppState.transcriptText = text;
+        const result = parseTranscript(text);
+        processParsedResult(result, 'Transcript PDF');
+      } catch (err) {
+        console.error(err);
+        statusEl.textContent = '❌ Could not parse PDF automatically. Please paste transcript text below.';
+        statusEl.className = 'parse-status error';
+        if (manualArea) manualArea.style.display = 'block';
+      }
     }
   }
 
-  function processTranscriptText(text) {
-    AppState.transcriptText = text;
-    const result = parseTranscript(text);
+  function processParsedResult(result, sourceLabel) {
     AppState.parsedTranscript = result;
 
-    // Auto-populate student info from transcript
+    // Auto-populate student info from transcript / schedule
     if (result.studentInfo.name) {
       AppState.studentName = result.studentInfo.name;
       if ($('input-name')) $('input-name').value = result.studentInfo.name;
@@ -245,16 +264,26 @@ function initStep3() {
       if ($('select-catalog')) $('select-catalog').value = detectedCat;
     }
 
-    // Auto-extract ALL currently registered / scheduled courses directly from transcript!
-    const registeredOnTranscript = result.courses.filter(c => c.isRegistered).map(c => c.code);
-    AppState.inProgressCourses = [...new Set(registeredOnTranscript)];
+    // Auto-extract ALL currently registered / scheduled courses directly
+    const registeredOnRecord = result.courses.filter(c => c.isRegistered).map(c => c.code);
+    AppState.inProgressCourses = [...new Set(registeredOnRecord)];
 
     // Render comprehensive transcript audit preview
     renderTranscriptAudit(result);
 
-    statusEl.textContent = `✅ Successfully extracted all courses: ${result.courses.length} total (${result.courses.filter(c=>c.passed).length} completed, ${registeredOnTranscript.length} currently registered).`;
+    const completedCount = result.courses.filter(c => c.passed).length;
+    const currentCount = result.courses.filter(c => c.isCurrent).length;
+    const scheduledCount = result.courses.filter(c => c.isScheduled).length;
+
+    statusEl.textContent = `✅ Successfully extracted all courses from ${sourceLabel}: ${result.courses.length} total (${completedCount} completed, ${currentCount} current, ${scheduledCount} scheduled).`;
     statusEl.className = 'parse-status success';
-    toast(`Audited ${result.courses.length} courses from transcript!`, 'success');
+    toast(`Audited ${result.courses.length} courses from ${sourceLabel}!`, 'success');
+  }
+
+  function processTranscriptText(text) {
+    AppState.transcriptText = text;
+    const result = parseTranscript(text);
+    processParsedResult(result, 'Pasted Transcript');
   }
 
   $('btn-parse-manual')?.addEventListener('click', () => {
@@ -287,47 +316,60 @@ function renderTranscriptAudit(result) {
   container.innerHTML = '';
 
   const completedCourses  = result.courses.filter(c => c.passed);
-  const registeredCourses = result.courses.filter(c => c.isRegistered);
+  const currentCourses    = result.courses.filter(c => c.isCurrent);
+  const scheduledCourses  = result.courses.filter(c => c.isScheduled);
+  const registeredOther   = result.courses.filter(c => c.isRegistered && !c.isCurrent && !c.isScheduled);
   const failedCourses     = result.courses.filter(c => c.failed);
   const sInfo             = result.studentInfo;
 
   let auditHTML = `
     <div class="audit-summary-card">
       <div class="audit-header">
-        <h4>📋 Official Transcript Audit Results</h4>
+        <h4>📋 Official Student Audit Results</h4>
         <span class="audit-badge">100% Client-Side Verified</span>
       </div>
       <div class="audit-stats-grid">
         <div class="audit-stat">
           <span class="audit-stat-lbl">Student</span>
-          <strong>${sInfo.name || 'Cesar Mendoza'}</strong>
+          <strong>${sInfo.name || AppState.studentName || 'Student Record'}</strong>
         </div>
         <div class="audit-stat">
           <span class="audit-stat-lbl">Student ID</span>
-          <strong>${sInfo.id || 'A000030323244'}</strong>
+          <strong>${sInfo.id || AppState.studentId || 'N/A'}</strong>
         </div>
         <div class="audit-stat">
           <span class="audit-stat-lbl">Cumulative GPA</span>
-          <strong class="${sInfo.gpa && parseFloat(sInfo.gpa) < 2.0 ? 'text-danger' : ''}">${sInfo.gpa || '1.45'}</strong>
+          <strong class="${sInfo.gpa && parseFloat(sInfo.gpa) < 2.0 ? 'text-danger' : ''}">${sInfo.gpa || 'N/A'}</strong>
         </div>
         <div class="audit-stat">
           <span class="audit-stat-lbl">Units Earned</span>
-          <strong>${sInfo.totalEarned || 32} / ${sInfo.totalAttempted || 41}</strong>
+          <strong>${sInfo.totalEarned || 0} / ${sInfo.totalAttempted || 0}</strong>
         </div>
       </div>
 
-      <!-- Currently Registered Section -->
+      <!-- Currently Enrolled Section -->
+      ${(currentCourses.length > 0 || registeredOther.length > 0) ? `
       <div class="audit-section">
-        <div class="audit-section-title">🔄 Currently Registered Courses (From Transcript):</div>
+        <div class="audit-section-title">🔄 Currently Enrolled Courses (${currentCourses.length || registeredOther.length}):</div>
         <div class="preview-chips">
-          ${registeredCourses.length > 0
-            ? registeredCourses.map(c => `
-                <span class="chip chip-inProgress" title="${c.description}">
-                  🔄 ${c.displayCode || c.code} — ${c.description} (0.00 earned)
-                </span>`).join('')
-            : '<span style="font-size:.85rem; color:var(--gray-500);">None detected on transcript</span>'}
+          ${(currentCourses.length > 0 ? currentCourses : registeredOther).map(c => `
+            <span class="chip chip-inProgress" title="${c.description}">
+              🔄 ${c.displayCode || c.code} — ${c.description} (${c.termRaw || 'Current Term'})
+            </span>`).join('')}
         </div>
-      </div>
+      </div>` : ''}
+
+      <!-- Future Scheduled Courses Section -->
+      ${scheduledCourses.length > 0 ? `
+      <div class="audit-section">
+        <div class="audit-section-title">📅 Future Scheduled Courses (${scheduledCourses.length}):</div>
+        <div class="preview-chips">
+          ${scheduledCourses.map(c => `
+            <span class="chip chip-inProgress" style="background:#EEF2FF; border-color:#C7D2FE; color:#3730A3;" title="${c.description}">
+              📅 ${c.displayCode || c.code} — ${c.description} (${c.termRaw || 'Scheduled Term'})
+            </span>`).join('')}
+        </div>
+      </div>` : ''}
 
       <!-- Completed Courses Section -->
       <div class="audit-section">
@@ -425,6 +467,7 @@ function generateAndShowPlan() {
       });
 
       AppState.plan = plan;
+      AppState.originalPlan = JSON.parse(JSON.stringify(plan));
       renderResults(plan);
       showScreen('screen-results');
     } catch (err) {
@@ -433,6 +476,16 @@ function generateAndShowPlan() {
       showScreen('screen-wizard');
     }
   }, 1000);
+}
+
+// Reset customized plan back to algorithm default
+function resetPlanToDefault() {
+  if (!AppState.originalPlan) return;
+  AppState.plan = JSON.parse(JSON.stringify(AppState.originalPlan));
+  renderResults(AppState.plan);
+  const resetBtn = $('btn-reset-plan');
+  if (resetBtn) resetBtn.style.display = 'none';
+  toast('Degree plan reset to default schedule.', 'info');
 }
 
 // ── RENDER RESULTS ────────────────────────────────────────
@@ -528,7 +581,9 @@ function renderSemesterGrid(plan) {
   const curSemId = termToSemesterId(AppState.currentTermId);
 
   plan.semesters.forEach(sem => {
-    if (!sem.courses || sem.courses.length === 0) return;
+    // Only skip if empty AND it's a past semester or transfer
+    const isPast = sem.semId === 'TRANSFER' || semesterSortOrder(sem.semId) < semesterSortOrder(curSemId);
+    if (isPast && (!sem.courses || sem.courses.length === 0)) return;
 
     const card = document.createElement('div');
     card.className = `semester-card sem-status-${dominantStatus(sem)}`;
@@ -539,41 +594,146 @@ function renderSemesterGrid(plan) {
       ? '📦 Prior Transfer Credits'
       : (sem.title || semesterTitle(sem.semId));
 
-    const totalCr = sem.courses.reduce((acc, c) => acc + (c.course?.credits || getCourse(c.id)?.credits || 3), 0);
+    const totalCr = (sem.courses || []).reduce((acc, c) => acc + (c.course?.credits || getCourse(c.id)?.credits || 3), 0);
+    const crPillClass = totalCr === 15 ? 'cr-max' : (totalCr > 15 ? 'cr-over' : '');
+
+    card.setAttribute('data-sem-id', sem.semId);
+
+    // Drop target eligibility: regular current or future semesters
+    const canReceiveDrop = !isPast;
 
     card.innerHTML = `
       <div class="sem-header">
         <span class="sem-title">${isCurrentSem ? '🔵 CURRENT ENROLLMENT — ' : ''}${termTitle}</span>
-        <span class="sem-credits">${totalCr} cr</span>
+        <span class="sem-cr-pill ${crPillClass}">${totalCr} / 15 CR</span>
       </div>
       <div class="sem-courses"></div>
     `;
 
     const courseList = card.querySelector('.sem-courses');
-    sem.courses.forEach(entry => {
-      const courseData = entry.course || getCourse(entry.id) || { code: entry.id, name: '', credits: 3 };
-      const chip = document.createElement('div');
-      chip.className = `course-chip chip-${entry.status}`;
 
-      const statusIcon = { completed:'✅', inProgress:'🔄', planned:'📋', failed:'🔴' }[entry.status] || '📋';
-      const gradeStr = entry.grade ? ` <span class="chip-grade">[${entry.grade}]</span>` : '';
-      const subTermTag = entry.subTerm ? `<span class="chip-term-tag">${entry.subTerm}</span>` : '';
+    if (!sem.courses || sem.courses.length === 0) {
+      if (canReceiveDrop) {
+        const emptyDz = document.createElement('div');
+        emptyDz.className = 'sem-empty-dropzone';
+        emptyDz.innerHTML = `
+          <div style="font-size:1.3rem; margin-bottom:4px;">📥</div>
+          <div>Drag &amp; drop courses here</div>
+          <div style="font-size:.74rem; opacity:.75; margin-top:2px;">(Up to 15 credit hours)</div>
+        `;
+        courseList.appendChild(emptyDz);
+      }
+    } else {
+      sem.courses.forEach(entry => {
+        const courseData = entry.course || getCourse(entry.id) || { code: entry.id, name: '', credits: 3 };
+        const chip = document.createElement('div');
+        chip.className = `course-chip chip-${entry.status}`;
 
-      chip.innerHTML = `
-        <div class="chip-main">
-          <span class="chip-icon">${statusIcon}</span>
-          <span class="chip-code">${courseData.code}</span>
-          <span class="chip-name">${courseData.name}</span>
-          ${gradeStr}
-          ${subTermTag}
-        </div>
-        <span class="chip-credits">${courseData.credits} cr</span>
-        ${courseData.badge ? `<span class="chip-badge">${courseData.badge}</span>` : ''}
-      `;
+        // Only planned courses (or retakes) in current/future terms can be dragged
+        const isMovable = !isPast && (entry.status === 'planned' || entry.status === 'failed');
+        if (isMovable) {
+          chip.classList.add('is-draggable');
+          chip.setAttribute('draggable', 'true');
+          chip.setAttribute('data-course-id', entry.id);
+          chip.setAttribute('data-sem-id', sem.semId);
 
-      chip.addEventListener('click', () => showCourseModal(entry, plan));
-      courseList.appendChild(chip);
-    });
+          chip.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('text/plain', JSON.stringify({
+              courseId: entry.id,
+              sourceSemId: sem.semId
+            }));
+            e.dataTransfer.effectAllowed = 'move';
+            chip.classList.add('is-dragging');
+          });
+
+          chip.addEventListener('dragend', () => {
+            chip.classList.remove('is-dragging');
+            $$('.semester-card').forEach(c => c.classList.remove('drag-target-valid', 'drag-target-invalid'));
+          });
+        }
+
+        const statusIcon = { completed:'✅', inProgress:'🔄', planned:'📋', failed:'🔴' }[entry.status] || '📋';
+        const gradeStr = entry.grade ? ` <span class="chip-grade">[${entry.grade}]</span>` : '';
+        const subTermTag = entry.subTerm ? `<span class="chip-term-tag">${entry.subTerm}</span>` : '';
+        const dragHandle = isMovable ? `<span class="drag-handle" title="Drag to move semester">⠿</span>` : '';
+
+        chip.innerHTML = `
+          <div class="chip-main">
+            ${dragHandle}
+            <span class="chip-icon">${statusIcon}</span>
+            <span class="chip-code">${courseData.code}</span>
+            <span class="chip-name">${courseData.name}</span>
+            ${gradeStr}
+            ${subTermTag}
+          </div>
+          <span class="chip-credits">${courseData.credits} cr</span>
+          ${courseData.badge ? `<span class="chip-badge">${courseData.badge}</span>` : ''}
+        `;
+
+        chip.addEventListener('click', () => {
+          if (chip.classList.contains('is-dragging')) return;
+          showCourseModal(entry, plan);
+        });
+
+        courseList.appendChild(chip);
+      });
+    }
+
+    // Attach drag & drop listeners to card if it can receive drops
+    if (canReceiveDrop) {
+      card.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        card.classList.add('drag-target-valid');
+      });
+
+      card.addEventListener('dragleave', (e) => {
+        if (!card.contains(e.relatedTarget)) {
+          card.classList.remove('drag-target-valid', 'drag-target-invalid');
+        }
+      });
+
+      card.addEventListener('drop', (e) => {
+        e.preventDefault();
+        card.classList.remove('drag-target-valid', 'drag-target-invalid');
+
+        let data;
+        try {
+          data = JSON.parse(e.dataTransfer.getData('text/plain'));
+        } catch (err) {
+          return;
+        }
+
+        if (!data || !data.courseId || !data.sourceSemId) return;
+
+        const { courseId, sourceSemId } = data;
+        const targetSemId = sem.semId;
+
+        const validation = validateCourseMove(AppState.plan, courseId, targetSemId, sourceSemId);
+        if (!validation.ok) {
+          toast('❌ ' + validation.reason, 'error');
+          return;
+        }
+
+        if (validation.warning) {
+          toast('⚠️ ' + validation.warning, 'warning');
+        }
+
+        const success = moveCourseInDegreePlan(AppState.plan, courseId, targetSemId, sourceSemId);
+        if (success) {
+          const courseObj = getCourse(courseId);
+          toast(`✅ Moved ${courseObj?.code || courseId} to ${sem.title || semesterTitle(targetSemId)}!`, 'success');
+          const resetBtn = $('btn-reset-plan');
+          if (resetBtn) resetBtn.style.display = 'inline-flex';
+
+          // Re-render UI with updated plan
+          renderSemesterGrid(AppState.plan);
+          renderSummaryBanner(AppState.plan);
+          renderGEStatus(AppState.plan);
+          setupConvincedModal(AppState.plan);
+        }
+      });
+    }
 
     grid.appendChild(card);
   });

@@ -264,7 +264,7 @@ function parseTranscript(text) {
   return { courses, studentInfo };
 }
 
-// ── DETECT CATALOG YEAR FROM TRANSCRIPT ───────────────────
+// ── DETECT CATALOG YEAR FROM TRANSCRIPT / SCHEDULE ─────────
 function detectCatalogYear(courses) {
   const luCourses = courses.filter(c => !c.isTransfer && c.term && c.term !== 'TRANSFER');
   if (luCourses.length === 0) return '25-26';
@@ -277,4 +277,135 @@ function detectCatalogYear(courses) {
   if (yr === 2024) return '24-25';
   if (yr === 2025) return '25-26';
   return '26-27';
+}
+
+// ── PARSE OFFICIAL LINDENWOOD EXCEL COURSE SCHEDULE (.xlsx, .xls) ──
+// Reads student schedule spreadsheets (e.g. StudentCourseSchedules (All Results).xlsx)
+// Extracts completed, current, and future scheduled courses with exact terms, grades, and credits.
+async function parseScheduleExcel(fileOrBuffer, fileName = '') {
+  let arrayBuffer;
+  if (fileOrBuffer instanceof ArrayBuffer) {
+    arrayBuffer = fileOrBuffer;
+  } else if (typeof Blob !== 'undefined' && fileOrBuffer instanceof Blob) {
+    arrayBuffer = await fileOrBuffer.arrayBuffer();
+    if (!fileName && fileOrBuffer.name) fileName = fileOrBuffer.name;
+  } else if (typeof Buffer !== 'undefined' && Buffer.isBuffer(fileOrBuffer)) {
+    arrayBuffer = fileOrBuffer;
+  } else {
+    throw new Error('Unsupported buffer/file format for Excel parsing');
+  }
+
+  // Use XLSX / XLSXStyle loaded in global scope
+  const xlsxLib = (typeof XLSXStyle !== 'undefined') ? XLSXStyle : (typeof XLSX !== 'undefined' ? XLSX : null);
+  if (!xlsxLib) throw new Error('SheetJS/XLSX library not loaded');
+
+  const wb = xlsxLib.read(arrayBuffer, { type: 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = xlsxLib.utils.sheet_to_json(ws);
+
+  const courses = [];
+  const GRADE_PTS = {
+    'A': 4.0, 'A+': 4.0, 'A-': 3.7, 'B+': 3.3, 'B': 3.0, 'B-': 2.7,
+    'C+': 2.3, 'C': 2.0, 'C-': 1.7, 'D+': 1.3, 'D': 1.0, 'D-': 0.7,
+    'F': 0.0, 'FN': 0.0, 'WF': 0.0
+  };
+
+  let totalEarned = 0;
+  let totalAttempted = 0;
+  let totalQP = 0;
+  let program = 'Cybersecurity';
+
+  rows.forEach(r => {
+    let rawCode = (r['Course Code'] || r['Course'] || r['Code'] || '').toString().trim();
+    if (!rawCode || rawCode.toLowerCase() === 'course code') return;
+
+    const title = (r['Course Name'] || r['Title'] || r['Description'] || '').toString().trim();
+    const grade = (r['Letter Grade'] || r['Grade'] || '').toString().trim();
+    const termRaw = (r['Term'] || '').toString().trim();
+    const credits = parseFloat(r['Credits'] || r['Hours'] || r['CR']) || 0;
+    const statusRaw = (r['Course Status'] || r['Status'] || '').toString().trim().toLowerCase();
+    const enrollment = (r['Enrollment'] || '').toString().trim();
+
+    if (enrollment && enrollment.toLowerCase().includes('cyber')) {
+      program = 'Cybersecurity';
+    }
+
+    // Clean course code: strip catalog suffixes like -23, -24
+    const cleanCode = rawCode.replace(/-\d+$/, '').replace(/\s+/g, '');
+
+    // Parse term: e.g. FALL_II_24_8W, FALL_24_16W, SPRING_I_25_8W, SUMMER_25_8W
+    let termId = 'F2_2026';
+    const m = termRaw.match(/(FALL|SPRING|SUMMER)(?:_(I|II))?_(\d{2,4})/i);
+    if (m) {
+      const season = m[1].toUpperCase();
+      const sub = m[2] ? m[2].toUpperCase() : '';
+      let yr = parseInt(m[3]);
+      if (yr < 100) yr += 2000;
+      if (season === 'FALL') {
+        termId = sub === 'I' ? 'F1_' + yr : 'F2_' + yr;
+      } else if (season === 'SPRING') {
+        termId = sub === 'I' ? 'SP1_' + yr : 'SP2_' + yr;
+      } else if (season === 'SUMMER') {
+        termId = 'SU_' + yr;
+      }
+    }
+
+    const isComplete = statusRaw.includes('complete') || !!grade;
+    const isCurrent = statusRaw.includes('current');
+    const isScheduled = statusRaw.includes('scheduled');
+    const isPassed = isComplete && PASSING_GRADES.has(grade);
+    const isFailed = isComplete && (grade === 'F' || grade === 'FN' || grade === 'WF');
+    const isRegistered = isCurrent || isScheduled || (!grade && (isCurrent || isScheduled));
+
+    if (isComplete && credits > 0) {
+      totalAttempted += credits;
+      if (isPassed) {
+        totalEarned += credits;
+      }
+      if (GRADE_PTS[grade] !== undefined) {
+        totalQP += GRADE_PTS[grade] * credits;
+      }
+    }
+
+    courses.push({
+      code: cleanCode,
+      displayCode: rawCode,
+      title: title,
+      description: title,
+      term: termId,
+      termRaw: termRaw,
+      credits: credits,
+      earnedCredits: isPassed ? credits : 0,
+      attemptCredits: credits,
+      grade: grade,
+      baseGrade: grade,
+      status: isPassed ? 'passed' : (isFailed ? 'failed' : (isRegistered ? 'registered' : 'other')),
+      passed: isPassed,
+      failed: isFailed,
+      isRegistered: isRegistered,
+      isCurrent: isCurrent,
+      isScheduled: isScheduled,
+      isTransfer: termRaw.toLowerCase().includes('transfer')
+    });
+  });
+
+  const gpa = totalAttempted > 0 ? (totalQP / totalAttempted).toFixed(2) : '3.00';
+
+  // Guess student name if in filename (e.g., 'Wyatt Justus Schedule.xlsx')
+  let guessedName = '';
+  const cleanFn = (fileName || '').replace(/\.[^/.]+$/, '');
+  if (/wyatt/i.test(cleanFn)) guessedName = 'Wyatt Justus';
+  else if (/cesar/i.test(cleanFn)) guessedName = 'Cesar Mendoza';
+
+  const studentInfo = {
+    name: guessedName,
+    id: '',
+    program: program,
+    gpa: gpa,
+    totalEarned: totalEarned,
+    totalAttempted: totalAttempted,
+    qualityPoints: totalQP
+  };
+
+  return { courses, studentInfo };
 }

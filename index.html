@@ -69,8 +69,11 @@
       <button id="btn-start" class="btn btn-primary btn-lg">
         🚀 Start Degree Plan
       </button>
-      <a href="#" class="btn btn-secondary" onclick="startDemo(); return false;">
-        👀 Load Cesar Mendoza Demo
+      <a href="#" class="btn btn-secondary" onclick="startWyattDemo(); return false;">
+        🎓 Load Wyatt Justus Demo (Excel Schedule)
+      </a>
+      <a href="#" class="btn btn-outline" onclick="startDemo(); return false;">
+        👀 Load Cesar Mendoza Demo (Transcript)
       </a>
     </div>
 
@@ -149,24 +152,24 @@
       </div>
     </div>
 
-    <!-- ─── STEP 2: Transcript Upload ─── -->
+    <!-- ─── STEP 2: Course Schedule (Excel) / Transcript (PDF) ─── -->
     <div class="wizard-step" id="wizard-step-2">
-      <h2 class="wizard-step-title">Step 2: Unofficial Transcript (PDF)</h2>
+      <h2 class="wizard-step-title">Step 2: Student Course Schedule (Excel) or Transcript (PDF)</h2>
       <p class="wizard-step-desc">
-        Drop the Lindenwood unofficial transcript PDF below. The system will automatically read
-        <strong>all completed courses, grades, credits, GPA, and currently registered courses</strong>.
+        Drop the student's <strong>StudentCourseSchedules Excel (.xlsx)</strong> export or <strong>Unofficial Transcript PDF</strong> below.
+        Excel schedules contain <strong>all Completed, Current, and Scheduled courses</strong> with exact grades, terms, and credits!
       </p>
 
       <!-- Drop zone -->
       <div class="drop-zone" id="drop-zone">
-        <div class="drop-zone-icon">📎</div>
-        <h3>Drop Unofficial Transcript PDF Here</h3>
-        <p>or click anywhere in this box to select your file</p>
+        <div class="drop-zone-icon">📊</div>
+        <h3>Drop Student Schedule Excel (.xlsx) or Transcript (PDF) Here</h3>
+        <p>or click anywhere in this box to select your file (.xlsx, .xls, .pdf supported)</p>
         <div class="drop-zone-or">— OR —</div>
         <button class="btn btn-outline btn-sm" onclick="event.stopPropagation(); document.getElementById('file-input').click();">
-          Browse PDF Files
+          Browse Excel (.xlsx) / PDF Files
         </button>
-        <input type="file" id="file-input" accept=".pdf" class="file-input-hidden">
+        <input type="file" id="file-input" accept=".xlsx,.xls,.pdf" class="file-input-hidden">
       </div>
 
       <div class="parse-status" id="parse-status"></div>
@@ -277,8 +280,14 @@
 
     <!-- 4. Semester Grid -->
     <div class="section-label">📅 Semester-by-Semester Degree Path</div>
+    <div class="drag-hint-banner">
+      <div>
+        <strong>✋ Interactive Drag &amp; Drop:</strong> Customize this degree path by dragging any planned course (⠿) between semesters. Offerings (Fall vs. Spring) are automatically verified, and a strict <strong>maximum 15 credit hours per semester</strong> limit is enforced.
+      </div>
+      <button id="btn-reset-plan" class="btn btn-sm btn-outline" style="display:none;" onclick="resetPlanToDefault()">↺ Reset to Default Plan</button>
+    </div>
     <p style="font-size:.88rem; color:var(--gray-600); margin-bottom:1rem;">
-      💡 <strong>Interactive Degree Map:</strong> Click any course chip to hear Leo explain why that course is scheduled in that term, its prerequisites, and what future courses it unlocks.
+      💡 <strong>Interactive Degree Map:</strong> Click any course chip to hear Leo explain why that course is scheduled in that term, its prerequisites, and what future courses it unlocks. Drag planned courses between future semesters to balance course load.
     </p>
     <div class="semester-grid" id="semester-grid"></div>
 
@@ -400,6 +409,85 @@ function startDemo() {
   if (document.getElementById('input-name')) document.getElementById('input-name').value = 'Cesar Mendoza';
   if (document.getElementById('input-id'))   document.getElementById('input-id').value   = 'A000030323244';
   if (document.getElementById('select-catalog')) document.getElementById('select-catalog').value = '25-26';
+}
+
+// ── WYATT JUSTUS LIVE DEMO (EXACT DATA FROM EXCEL SCHEDULE) ──
+function startWyattDemo() {
+  AppState.studentName   = 'Wyatt Justus';
+  AppState.studentId     = 'A000030219842';
+  AppState.catalogYear   = '24-25';
+  AppState.currentTermId = 'F1_2026';
+
+  const wyattCourses = [
+    { code: 'ICS21300', displayCode: 'ICS21300', description: "Foundations of Information Technology", term: 'F2_2024', termRaw: 'FALL_II_24_8W', grade: 'C', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ENGL15000', displayCode: 'ENGL15000', description: "Composition I (GE-Comm)", term: 'F2_2024', termRaw: 'FALL_24_16W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'UNIV10100', displayCode: 'UNIV10100', description: "Advantages of Self-Awareness", term: 'F2_2024', termRaw: 'FALL_24_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MTH14100', displayCode: 'MTH14100', description: "Basic Statistics (GE-Math)", term: 'F2_2024', termRaw: 'FALL_24_16W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ARTH22700', displayCode: 'ARTH22700', description: "Global Art History III: From Colonial Vistas to Avant-Garde (GE-HC:Arts/HD)", term: 'F1_2024', termRaw: 'FALL_I_24_8W', grade: 'A', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'CCJ20000', displayCode: 'CCJ20000', description: "Criminology (GE-SocSci)", term: 'F2_2024', termRaw: 'FALL_24_16W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'IIT22000', displayCode: 'IIT22000', description: "Hardware and Operating Systems", term: 'SP1_2025', termRaw: 'SPRING_I_25_8W', grade: 'A', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ENGL17000', displayCode: 'ENGL17000', description: "Composition II (GE-Comm)", term: 'SP2_2025', termRaw: 'SPRING_25_16W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ICS21400', displayCode: 'ICS21400', description: "Foundations of Networking", term: 'SP1_2025', termRaw: 'SPRING_I_25_8W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'IIT33400', displayCode: 'IIT33400', description: "Ethical Issues in Cybersecurity", term: 'F1_2025', termRaw: 'FALL_I_25_8W', grade: 'A', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ICS41500', displayCode: 'ICS41500', description: "Cloud Computing Essentials and Best Practices", term: 'SP1_2026', termRaw: 'SPRING_I_26_8W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20907', displayCode: 'MUS20907', description: "Wind Ensemble", term: 'F2_2024', termRaw: 'FALL_24_16W', grade: 'A', earnedCredits: 0.0, attemptCredits: 0.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS10459', displayCode: 'MUS10459', description: "Private Lessons: Tuba", term: 'F2_2024', termRaw: 'FALL_24_16W', grade: 'A', earnedCredits: 2.0, attemptCredits: 2.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20907', displayCode: 'MUS20907', description: "Wind Ensemble", term: 'SP2_2025', termRaw: 'SPRING_25_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ICS31000', displayCode: 'ICS31000-23', description: "Foundations of Cybersecurity", term: 'SP2_2025', termRaw: 'SPRING_II_25_8W', grade: 'C', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MTH15100', displayCode: 'MTH15100', description: "College Algebra (GE-Math)", term: 'SP2_2025', termRaw: 'SPRING_25_16W', grade: 'C', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20459', displayCode: 'MUS20459', description: "Private Lessons: Tuba", term: 'SP2_2025', termRaw: 'SPRING_25_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20459', displayCode: 'MUS20459', description: "Private Lessons: Tuba", term: 'F2_2025', termRaw: 'FALL_25_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20907', displayCode: 'MUS20907', description: "Wind Ensemble", term: 'F2_2025', termRaw: 'FALL_25_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ICS32700', displayCode: 'ICS32700-23', description: "Network and Cloud Security", term: 'F2_2025', termRaw: 'FALL_II_25_8W', grade: 'A', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'HIST11700', displayCode: 'HIST11700', description: "US History: American Military History through World War II (GE-HC:USHisGov)", term: 'F2_2025', termRaw: 'FALL_25_16W', grade: 'C', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'CCJ20000', displayCode: 'CCJ20000', description: "Criminology (GE-SocSci)", term: 'F2_2025', termRaw: 'FALL_25_16W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'IIT21500', displayCode: 'IIT21500-23', description: "Programming Logic and Design", term: 'F2_2025', termRaw: 'FALL_II_25_8W', grade: 'B', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20906', displayCode: 'MUS20906', description: "Marching Band", term: 'F2_2025', termRaw: 'FALL_25_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'IIT33500', displayCode: 'IIT33500-23', description: "Blockchain Technology for Business", term: 'SP1_2026', termRaw: 'SPRING_I_26_8W', grade: 'C', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'IIT35100', displayCode: 'IIT35100-23', description: "Database Analysis and Design Concepts", term: 'SP2_2026', termRaw: 'SPRING_II_26_8W', grade: 'A', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ICS41200', displayCode: 'ICS41200-23', description: "Linux Server Installation & Configuration", term: 'SP1_2026', termRaw: 'SPRING_I_26_8W', grade: 'C', earnedCredits: 3.0, attemptCredits: 3.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS21215', displayCode: 'MUS21215', description: "Instrumental Ensemble: Brass", term: 'SP2_2026', termRaw: 'SPRING_26_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS21215', displayCode: 'MUS21215', description: "Instrumental Ensemble: Brass", term: 'F2_2025', termRaw: 'FALL_25_16W', grade: 'A', earnedCredits: 0.0, attemptCredits: 0.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20907', displayCode: 'MUS20907', description: "Wind Ensemble", term: 'SP2_2026', termRaw: 'SPRING_26_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20905', displayCode: 'MUS20905', description: "Pep Band", term: 'SP2_2026', termRaw: 'SPRING_26_16W', grade: 'A', earnedCredits: 0.0, attemptCredits: 0.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS30459', displayCode: 'MUS30459', description: "Private Lessons: Tuba", term: 'SP2_2026', termRaw: 'SPRING_26_16W', grade: 'A', earnedCredits: 2.0, attemptCredits: 2.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS20901', displayCode: 'MUS20901', description: "Jazz Band", term: 'SP2_2026', termRaw: 'SPRING_26_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'MUS10457', displayCode: 'MUS10457', description: "Private Lessons: Trombone", term: 'SP2_2026', termRaw: 'SPRING_26_16W', grade: 'A', earnedCredits: 1.0, attemptCredits: 1.0, passed: true, failed: false, isRegistered: false, isCurrent: false, isScheduled: false },
+    { code: 'ICS42100', displayCode: 'ICS42100-23', description: "Ethical Hacking", term: 'F1_2026', termRaw: 'FALL_I_26_8W', grade: '', earnedCredits: 0, attemptCredits: 3.0, passed: false, failed: false, isRegistered: true, isCurrent: true, isScheduled: false },
+    { code: 'ICS43300', displayCode: 'ICS43300-23', description: "Web Based Application Security", term: 'F1_2026', termRaw: 'FALL_I_26_8W', grade: '', earnedCredits: 0, attemptCredits: 3.0, passed: false, failed: false, isRegistered: true, isCurrent: true, isScheduled: false },
+    { code: 'MUS20907', displayCode: 'MUS20907', description: "Wind Ensemble", term: 'F2_2026', termRaw: 'FALL_26_16W', grade: '', earnedCredits: 0, attemptCredits: 1.0, passed: false, failed: false, isRegistered: true, isCurrent: true, isScheduled: false },
+    { code: 'MUS10459', displayCode: 'MUS10459', description: "Private Lessons: Tuba", term: 'F2_2026', termRaw: 'FALL_26_16W', grade: '', earnedCredits: 0, attemptCredits: 2.0, passed: false, failed: false, isRegistered: true, isCurrent: true, isScheduled: false },
+    { code: 'MUS20901', displayCode: 'MUS20901', description: "Jazz Band", term: 'F2_2026', termRaw: 'FALL_26_16W', grade: '', earnedCredits: 0, attemptCredits: 0.0, passed: false, failed: false, isRegistered: true, isCurrent: true, isScheduled: false },
+    { code: 'ICS42300', displayCode: 'ICS42300', description: "Advanced Penetration Testing", term: 'F2_2026', termRaw: 'FALL_II_26_8W', grade: '', earnedCredits: 0, attemptCredits: 3.0, passed: false, failed: false, isRegistered: true, isCurrent: false, isScheduled: true },
+    { code: 'ICS42400', displayCode: 'ICS42400', description: "Cybersecurity Analysis", term: 'F2_2026', termRaw: 'FALL_II_26_8W', grade: '', earnedCredits: 0, attemptCredits: 3.0, passed: false, failed: false, isRegistered: true, isCurrent: false, isScheduled: true },
+    { code: 'ENGL20101', displayCode: 'ENGL20101', description: "Modern World Literature (GE-HC:Lit/HD)", term: 'F2_2026', termRaw: 'FALL_II_26_8W', grade: '', earnedCredits: 0, attemptCredits: 3.0, passed: false, failed: false, isRegistered: true, isCurrent: false, isScheduled: true },
+  ];
+
+  const demoSchedule = {
+    courses: wyattCourses,
+    studentInfo: {
+      name: 'Wyatt Justus',
+      id: 'A000030219842',
+      program: 'Cybersecurity',
+      gpa: '3.38',
+      qualityPoints: 240.0,
+      totalCourses: 42,
+      totalAttempted: 71.0,
+      totalEarned: 71.0
+    }
+  };
+
+  AppState.parsedTranscript = demoSchedule;
+  AppState.inProgressCourses = ['ICS42100', 'ICS43300', 'ICS42300', 'ICS42400', 'ENGL20101', 'MUS20907', 'MUS10459', 'MUS20901'];
+
+  showScreen('screen-wizard');
+  showStep(2);
+  renderTranscriptAudit(demoSchedule);
+
+  if (document.getElementById('input-name')) document.getElementById('input-name').value = 'Wyatt Justus';
+  if (document.getElementById('input-id'))   document.getElementById('input-id').value   = 'A000030219842';
+  if (document.getElementById('select-catalog')) document.getElementById('select-catalog').value = '24-25';
+  if (document.getElementById('select-current-term')) document.getElementById('select-current-term').value = 'F1_2026';
 }
 </script>
 
