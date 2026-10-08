@@ -356,39 +356,32 @@ function initStep3() {
       // PDF is the primary source of truth for all past completed coursework,
       // transfer credits, letter grades, course descriptions (with GE tags), and GPA.
       // The ONLY thing taken from Excel is active courses for the current semester (isCurrent & isScheduled).
-      const courseMap = new Map();
+      // Keep EVERY single course from the PDF transcript in EVERY term intact — do NOT collapse into a Map!
+      const mergedCourses = (pdfRes.courses || []).map(c => ({ ...c, source: 'PDF' }));
 
-      // 1. Add all courses from PDF first
-      (pdfRes.courses || []).forEach(c => {
-        const norm = normalizeCode(c.code);
-        if (!norm) return;
-        courseMap.set(norm, { ...c, source: 'PDF' });
-      });
-
-      // 2. Extract ONLY active courses (isCurrent or isScheduled) from Excel
+      // Extract ONLY active courses (isCurrent or isScheduled) from Excel
       const activeExcelCourses = (xlsRes.courses || []).filter(c => c.isCurrent || c.isScheduled);
+      const currentTermPdfCourseCodes = new Set(
+        mergedCourses.filter(c => c.isRegistered).map(c => normalizeCode(c.code))
+      );
+
       activeExcelCourses.forEach(c => {
         const norm = normalizeCode(c.code);
         if (!norm) return;
 
-        if (courseMap.has(norm)) {
-          // Active course listed on PDF (with 0 credits or pending grade)
-          const existing = courseMap.get(norm);
-          courseMap.set(norm, {
-            ...existing,
-            term: c.term || existing.term,
-            termRaw: c.termRaw || existing.termRaw,
-            credits: c.credits > 0 ? c.credits : (existing.credits || 3),
-            attemptCredits: c.credits > 0 ? c.credits : (existing.attemptCredits || 3),
-            isCurrent: !!c.isCurrent,
-            isScheduled: !!c.isScheduled,
-            isRegistered: true,
-            status: 'REGISTERED',
-            source: 'PDF+EXCEL_ACTIVE'
-          });
-        } else {
-          // Active course in Excel not yet on PDF transcript (e.g. Fall II scheduled)
-          courseMap.set(norm, {
+        // Find the active/current registered instance in mergedCourses
+        const activePdfCourse = mergedCourses.find(mc => normalizeCode(mc.code) === norm && mc.isRegistered);
+        if (activePdfCourse) {
+          activePdfCourse.term = c.term || activePdfCourse.term;
+          activePdfCourse.termRaw = c.termRaw || activePdfCourse.termRaw;
+          activePdfCourse.credits = c.credits > 0 ? c.credits : (activePdfCourse.credits || 3);
+          activePdfCourse.attemptCredits = c.credits > 0 ? c.credits : (activePdfCourse.attemptCredits || 3);
+          activePdfCourse.isCurrent = !!c.isCurrent;
+          activePdfCourse.isScheduled = !!c.isScheduled;
+          activePdfCourse.source = 'PDF+EXCEL_ACTIVE';
+        } else if (!currentTermPdfCourseCodes.has(norm)) {
+          // Scheduled course present in Excel but NOT in PDF current term (e.g. Fall II scheduled)
+          mergedCourses.push({
             code: norm,
             displayCode: c.displayCode || norm,
             title: c.title,
@@ -410,10 +403,9 @@ function initStep3() {
             isTransfer: false,
             source: 'EXCEL_SCHEDULED'
           });
+          currentTermPdfCourseCodes.add(norm);
         }
       });
-
-      const mergedCourses = Array.from(courseMap.values());
 
       // Student info strictly from PDF (the official academic record)
       let sName = pdfRes.studentInfo?.name || xlsRes.studentInfo?.name || 'Dummy Student';
@@ -806,7 +798,7 @@ function renderSemesterGrid(plan) {
       ? '📦 Prior Transfer Credits'
       : (sem.title || semesterTitle(sem.semId));
 
-    const totalCr = (sem.courses || []).reduce((acc, c) => acc + (c.course?.credits || getCourse(c.id)?.credits || 3), 0);
+    const totalCr = (sem.courses || []).reduce((acc, c) => acc + (c.course?.credits !== undefined ? c.course.credits : (getCourse(c.id)?.credits || 3)), 0);
     const crPillClass = totalCr === 15 ? 'cr-max' : (totalCr > 15 ? 'cr-over' : '');
 
     card.setAttribute('data-sem-id', sem.semId);

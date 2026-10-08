@@ -389,12 +389,15 @@ const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
   allTranscriptCourses.filter(c => c.passed).forEach(c => {
     const id = normalizeCode(c.code);
     const t = c.term || 'TRANSFER';
+    const actualCr = (c.earnedCredits !== undefined && c.earnedCredits !== null) ? c.earnedCredits : (getCourse(id)?.credits || 3);
     addToSemester(t, {
       id,
       termId: t,
       status: 'completed',
       grade: c.grade,
-      course: getCourse(id) || { code: c.displayCode || c.code, name: c.description || id, credits: c.earnedCredits || 3 },
+      course: getCourse(id)
+        ? { ...getCourse(id), credits: actualCr }
+        : { code: c.displayCode || c.code, name: c.description || id, credits: actualCr },
       reason: getCourse(id)?.planningNote || 'Completed course towards degree requirements.'
     });
   });
@@ -420,11 +423,16 @@ const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
   // In-progress courses (currently registered from transcript)
   Object.entries(inProgress).forEach(([id, termId]) => {
     const tInfo = allTranscriptCourses.find(c => normalizeCode(c.code) === id && c.isRegistered);
-    const courseData = getCourse(id) || {
-      code: tInfo?.displayCode || id,
-      name: tInfo?.description || id,
-      credits: 3
-    };
+    const actualCr = (tInfo?.attemptCredits !== undefined && tInfo?.attemptCredits !== null)
+      ? tInfo.attemptCredits
+      : (tInfo?.credits !== undefined ? tInfo.credits : (getCourse(id)?.credits || 3));
+    const courseData = getCourse(id)
+      ? { ...getCourse(id), credits: actualCr }
+      : {
+          code: tInfo?.displayCode || id,
+          name: tInfo?.description || id,
+          credits: actualCr
+        };
 
     addToSemester(termId, {
       id,
@@ -453,22 +461,14 @@ const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
   let totalAttempted = studentInfo?.totalAttempted || 0;
 
   if (totalEarned === 0) {
-    // Calculate from transcript without double-counting
-    const countedCodes = new Set();
+    // Calculate from passed transcript courses directly
     allTranscriptCourses.forEach(c => {
-      const id = normalizeCode(c.code);
       if (c.passed) {
-        if (!countedCodes.has(id)) {
-          // Only count each course once (use passed instance)
-          totalEarned += (c.earnedCredits || 0);
-          totalAttempted += (c.attemptCredits || 0);
-          countedCodes.add(id);
-        }
-      } else if (c.failed && !passedEntries[id]) {
-        // Count failed attempts only if never passed
-        totalAttempted += (c.attemptCredits || 0);
+        totalEarned += (c.earnedCredits !== undefined ? c.earnedCredits : 0);
+        totalAttempted += (c.attemptCredits !== undefined ? c.attemptCredits : 0);
+      } else if (c.failed) {
+        totalAttempted += (c.attemptCredits !== undefined ? c.attemptCredits : 0);
       }
-      // Don't count registered courses (0 credits yet)
     });
   }
 
