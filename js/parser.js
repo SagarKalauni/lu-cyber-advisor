@@ -12,7 +12,22 @@ const PASSING_GRADES = new Set([
 
 function cleanTripledText(str) {
   if (!str) return '';
-  return str.replace(/([A-Za-z0-9/])\1{2}/g, '$1');
+  let s = str.trim();
+  // Handle doubled strings: e.g. "Wyatt L JustusWyatt L Justus" -> "Wyatt L Justus"
+  const len = s.length;
+  if (len >= 6 && len % 2 === 0) {
+    const half = s.slice(0, len / 2);
+    if (half === s.slice(len / 2)) {
+      s = half;
+    }
+  }
+  if (len >= 9 && len % 3 === 0) {
+    const third = s.slice(0, len / 3);
+    if (third + third + third === s) {
+      s = third;
+    }
+  }
+  return s.replace(/([A-Za-z0-9/])\1{2}/g, '$1').trim();
 }
 
 function parseTranscriptTermCode(raw) {
@@ -42,7 +57,12 @@ async function extractTextFromPDF(file) {
     reader.onload = async function(e) {
       try {
         const typedArray = new Uint8Array(e.target.result);
-        const loadingTask = pdfjsLib.getDocument({ data: typedArray });
+        const pdfjs = window.pdfjsLib || window['pdfjs-dist/build/pdf'];
+        if (!pdfjs) throw new Error('PDF.js library not loaded. Please check internet connection or paste text.');
+        if (pdfjs.GlobalWorkerOptions && !pdfjs.GlobalWorkerOptions.workerSrc) {
+          pdfjs.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        }
+        const loadingTask = pdfjs.getDocument({ data: typedArray });
         const pdf = await loadingTask.promise;
         const fullLines = [];
 
@@ -243,6 +263,8 @@ function parseTranscript(text) {
         passed: isPassed,
         failed: isFailed,
         isRegistered,
+        isCurrent: isRegistered,
+        isScheduled: false,
         isTransfer,
         isRepeated
       });
@@ -342,9 +364,9 @@ async function parseScheduleExcel(fileOrBuffer, fileName = '') {
       let yr = parseInt(m[3]);
       if (yr < 100) yr += 2000;
       if (season === 'FALL') {
-        termId = sub === 'I' ? 'F1_' + yr : 'F2_' + yr;
+        termId = sub === 'II' ? 'F2_' + yr : 'F1_' + yr;
       } else if (season === 'SPRING') {
-        termId = sub === 'I' ? 'SP1_' + yr : 'SP2_' + yr;
+        termId = sub === 'II' ? 'SP2_' + yr : 'SP1_' + yr;
       } else if (season === 'SUMMER') {
         termId = 'SU_' + yr;
       }

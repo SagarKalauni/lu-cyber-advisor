@@ -202,226 +202,291 @@ function initStep3() {
       if (e.dataTransfer.files[0]) handlePdfFile(e.dataTransfer.files[0]);
     });
   }
-  if (fileInputPdf) {
-    fileInputPdf.addEventListener('change', e => {
-      if (e.target.files[0]) handlePdfFile(e.target.files[0]);
-    });
-  }
+    if (fileInputPdf) {
+      fileInputPdf.addEventListener('change', e => {
+        if (e.target.files && e.target.files[0]) {
+          const f = e.target.files[0];
+          e.target.value = '';
+          handlePdfFile(f);
+        }
+      });
+    }
 
-  // Excel Dropzone & Browse Button
-  $('btn-browse-excel')?.addEventListener('click', (e) => {
-    e.stopPropagation();
-    fileInputExcel?.click();
-  });
-  if (dropExcel) {
-    dropExcel.addEventListener('click', (e) => {
+    // Excel Dropzone & Browse Button
+    $('btn-browse-excel')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       fileInputExcel?.click();
     });
-    dropExcel.addEventListener('dragover', e => { e.preventDefault(); dropExcel.classList.add('drag-over'); });
-    dropExcel.addEventListener('dragleave', () => dropExcel.classList.remove('drag-over'));
-    dropExcel.addEventListener('drop', e => {
-      e.preventDefault();
-      dropExcel.classList.remove('drag-over');
-      if (e.dataTransfer.files[0]) handleExcelFile(e.dataTransfer.files[0]);
-    });
-  }
-  if (fileInputExcel) {
-    fileInputExcel.addEventListener('change', e => {
-      if (e.target.files[0]) handleExcelFile(e.target.files[0]);
-    });
-  }
-
-  // Combined Drop Area (Accepts both at once)
-  if (dropCombined) {
-    dropCombined.addEventListener('dragover', e => { e.preventDefault(); dropCombined.classList.add('drag-over'); });
-    dropCombined.addEventListener('dragleave', () => dropCombined.classList.remove('drag-over'));
-    dropCombined.addEventListener('drop', e => {
-      e.preventDefault();
-      dropCombined.classList.remove('drag-over');
-      const files = Array.from(e.dataTransfer.files);
-      files.forEach(f => {
-        if (f.name.endsWith('.pdf')) handlePdfFile(f);
-        else if (f.name.endsWith('.xlsx') || f.name.endsWith('.xls')) handleExcelFile(f);
+    if (dropExcel) {
+      dropExcel.addEventListener('click', () => {
+        fileInputExcel?.click();
       });
-    });
-  }
-
-  if (toggleManual) {
-    toggleManual.addEventListener('click', () => {
-      manualArea.style.display = manualArea.style.display === 'none' ? 'block' : 'none';
-      toggleManual.textContent = manualArea.style.display === 'none' ? '✏️ Enter transcript manually / paste text' : '✏️ Hide manual entry';
-    });
-  }
-
-  async function handlePdfFile(file) {
-    if (!file.name.endsWith('.pdf')) {
-      toast('Please upload a PDF (.pdf) transcript.', 'error');
-      return;
+      dropExcel.addEventListener('dragover', e => { e.preventDefault(); dropExcel.classList.add('drag-over'); });
+      dropExcel.addEventListener('dragleave', () => dropExcel.classList.remove('drag-over'));
+      dropExcel.addEventListener('drop', e => {
+        e.preventDefault();
+        dropExcel.classList.remove('drag-over');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) handleExcelFile(e.dataTransfer.files[0]);
+      });
     }
-    const pill = $('status-pill-pdf');
-    const textSpan = $('status-text-pdf');
-    if (pill) pill.className = 'file-status-pill status-loading';
-    if (textSpan) textSpan.textContent = `Reading ${file.name}...`;
-
-    try {
-      const text = await extractTextFromPDF(file);
-      AppState.transcriptText = text;
-      const result = parseTranscript(text);
-      AppState.transcriptResult = result;
-
-      if (pill) pill.className = 'file-status-pill status-success';
-      if (textSpan) textSpan.textContent = `✅ ${file.name} (${result.courses.length} courses audited, GPA: ${result.studentInfo.gpa || 'N/A'})`;
-      $('card-upload-pdf')?.classList.add('uploaded-ready');
-      toast(`Loaded PDF Transcript: ${result.courses.length} courses!`, 'success');
-
-      reconcileAndApply();
-    } catch (err) {
-      console.error(err);
-      if (pill) pill.className = 'file-status-pill status-error';
-      if (textSpan) textSpan.textContent = `❌ PDF parse failed: ${err.message}`;
-      toast('Could not parse PDF. Paste text if needed.', 'error');
-    }
-  }
-
-  async function handleExcelFile(file) {
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast('Please upload an Excel (.xlsx/.xls) schedule file.', 'error');
-      return;
-    }
-    const pill = $('status-pill-excel');
-    const textSpan = $('status-text-excel');
-    if (pill) pill.className = 'file-status-pill status-loading';
-    if (textSpan) textSpan.textContent = `Reading ${file.name}...`;
-
-    try {
-      const result = await parseScheduleExcel(file);
-      AppState.scheduleResult = result;
-
-      if (pill) pill.className = 'file-status-pill status-success';
-      const cur = result.courses.filter(c => c.isCurrent).length;
-      const sch = result.courses.filter(c => c.isScheduled).length;
-      if (textSpan) textSpan.textContent = `✅ ${file.name} (${result.courses.length} courses, ${cur} current, ${sch} scheduled)`;
-      $('card-upload-excel')?.classList.add('uploaded-ready');
-      toast(`Loaded Excel Schedule: ${result.courses.length} courses!`, 'success');
-
-      reconcileAndApply();
-    } catch (err) {
-      console.error(err);
-      if (pill) pill.className = 'file-status-pill status-error';
-      if (textSpan) textSpan.textContent = `❌ Excel parse failed: ${err.message}`;
-      toast('Could not parse Excel schedule: ' + err.message, 'error');
-    }
-  }
-
-  function reconcileAndApply() {
-    const pdfRes = AppState.transcriptResult;
-    const xlsRes = AppState.scheduleResult;
-
-    if (!pdfRes && !xlsRes) return;
-
-    let mergedResult;
-    if (pdfRes && !xlsRes) {
-      mergedResult = pdfRes;
-    } else if (!pdfRes && xlsRes) {
-      mergedResult = xlsRes;
-    } else {
-      // Reconcile BOTH files!
-      mergedResult = reconcilePdfAndExcel(pdfRes, xlsRes);
+    if (fileInputExcel) {
+      fileInputExcel.addEventListener('change', e => {
+        if (e.target.files && e.target.files[0]) {
+          const f = e.target.files[0];
+          e.target.value = '';
+          handleExcelFile(f);
+        }
+      });
     }
 
-    processParsedResult(mergedResult);
-  }
-
-  function reconcilePdfAndExcel(pdfRes, xlsRes) {
-    // Merge courses intelligently:
-    // Excel contains full current and scheduled courses with accurate terms (e.g. Fall I, Fall II)
-    // PDF contains transfer credits, letter grades, and official cumulative GPA
-    const courseMap = new Map();
-
-    // 1. Add all PDF courses first
-    (pdfRes.courses || []).forEach(c => {
-      const norm = (c.code || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (!norm) return;
-      courseMap.set(norm, { ...c, source: 'PDF' });
-    });
-
-    // 2. Overlay / Merge Excel courses
-    (xlsRes.courses || []).forEach(c => {
-      const norm = (c.code || '').replace(/[^A-Z0-9]/gi, '').toUpperCase();
-      if (!norm) return;
-
-      if (courseMap.has(norm)) {
-        const existing = courseMap.get(norm);
-        // If course is currently enrolled or scheduled in Excel, preserve those flags!
-        courseMap.set(norm, {
-          ...existing,
-          ...c,
-          // If PDF had a confirmed passing grade or transfer, keep earned credits
-          earnedCredits: c.earnedCredits > 0 ? c.earnedCredits : existing.earnedCredits,
-          passed: c.passed || existing.passed,
-          isTransfer: existing.isTransfer || c.isTransfer,
-          source: 'RECONCILED'
+    // Combined Drop Area (Accepts both at once)
+    if (dropCombined) {
+      dropCombined.addEventListener('dragover', e => { e.preventDefault(); dropCombined.classList.add('drag-over'); });
+      dropCombined.addEventListener('dragleave', () => dropCombined.classList.remove('drag-over'));
+      dropCombined.addEventListener('drop', e => {
+        e.preventDefault();
+        dropCombined.classList.remove('drag-over');
+        const files = Array.from(e.dataTransfer.files || []);
+        files.forEach(f => {
+          if (/\.pdf$/i.test(f.name)) handlePdfFile(f);
+          else if (/\.(xlsx|xls)$/i.test(f.name)) handleExcelFile(f);
         });
-      } else {
-        courseMap.set(norm, { ...c, source: 'EXCEL' });
+      });
+    }
+
+    if (toggleManual) {
+      toggleManual.addEventListener('click', () => {
+        manualArea.style.display = manualArea.style.display === 'none' ? 'block' : 'none';
+        toggleManual.textContent = manualArea.style.display === 'none' ? '✏️ Enter transcript manually / paste text' : '✏️ Hide manual entry';
+      });
+    }
+
+    async function handlePdfFile(file) {
+      if (!file || !/\.pdf$/i.test(file.name)) {
+        toast('Please upload a PDF (.pdf) transcript.', 'error');
+        return;
       }
-    });
+      const pill = $('status-pill-pdf');
+      const textSpan = $('status-text-pdf');
+      if (pill) pill.className = 'file-status-pill status-loading';
+      if (textSpan) textSpan.textContent = `Reading ${file.name}...`;
 
-    const mergedCourses = Array.from(courseMap.values());
+      try {
+        const text = await extractTextFromPDF(file);
+        AppState.transcriptText = text;
+        const result = parseTranscript(text);
+        AppState.transcriptResult = result;
 
-    // Best student info
-    const studentInfo = {
-      name: xlsRes.studentInfo?.name || pdfRes.studentInfo?.name || '',
-      id: xlsRes.studentInfo?.id || pdfRes.studentInfo?.id || '',
-      program: xlsRes.studentInfo?.program || pdfRes.studentInfo?.program || 'Cybersecurity',
-      gpa: pdfRes.studentInfo?.gpa || xlsRes.studentInfo?.gpa || '3.00',
-      totalEarned: Math.max(pdfRes.studentInfo?.totalEarned || 0, xlsRes.studentInfo?.totalEarned || 0),
-      totalCourses: mergedCourses.length
-    };
+        if (pill) pill.className = 'file-status-pill status-success';
+        if (textSpan) textSpan.textContent = `✅ ${file.name} (${result.courses.length} courses audited, GPA: ${result.studentInfo.gpa || 'N/A'})`;
+        $('card-upload-pdf')?.classList.add('uploaded-ready');
+        toast(`Loaded PDF Transcript: ${result.courses.length} courses!`, 'success');
 
-    return { courses: mergedCourses, studentInfo };
-  }
-
-  function processParsedResult(result) {
-    AppState.parsedTranscript = result;
-
-    // Auto-populate student info
-    if (result.studentInfo.name) {
-      AppState.studentName = result.studentInfo.name;
-      if ($('input-name')) $('input-name').value = result.studentInfo.name;
-    }
-    if (result.studentInfo.id) {
-      AppState.studentId = result.studentInfo.id;
-      if ($('input-id')) $('input-id').value = result.studentInfo.id;
+        reconcileAndApply();
+      } catch (err) {
+        console.error(err);
+        if (pill) pill.className = 'file-status-pill status-error';
+        if (textSpan) textSpan.textContent = `❌ PDF parse failed: ${err.message}`;
+        toast('Could not parse PDF. Paste text if needed.', 'error');
+      }
     }
 
-    // Auto-detect catalog year
-    const detectedCat = detectCatalogYear(result.courses);
-    if (detectedCat) {
-      AppState.catalogYear = detectedCat;
-      if ($('select-catalog')) $('select-catalog').value = detectedCat;
+    async function handleExcelFile(file) {
+      if (!file || !/\.(xlsx|xls)$/i.test(file.name)) {
+        toast('Please upload an Excel (.xlsx/.xls) schedule file.', 'error');
+        return;
+      }
+      const pill = $('status-pill-excel');
+      const textSpan = $('status-text-excel');
+      if (pill) pill.className = 'file-status-pill status-loading';
+      if (textSpan) textSpan.textContent = `Reading ${file.name}...`;
+
+      try {
+        const result = await parseScheduleExcel(file);
+        AppState.scheduleResult = result;
+
+        if (pill) pill.className = 'file-status-pill status-success';
+        const cur = result.courses.filter(c => c.isCurrent).length;
+        const sch = result.courses.filter(c => c.isScheduled).length;
+        if (textSpan) textSpan.textContent = `✅ ${file.name} (${result.courses.length} courses, ${cur} current, ${sch} scheduled)`;
+        $('card-upload-excel')?.classList.add('uploaded-ready');
+        toast(`Loaded Excel Schedule: ${result.courses.length} courses!`, 'success');
+
+        reconcileAndApply();
+      } catch (err) {
+        console.error(err);
+        if (pill) pill.className = 'file-status-pill status-error';
+        if (textSpan) textSpan.textContent = `❌ Excel parse failed: ${err.message}`;
+        toast('Could not parse Excel schedule: ' + err.message, 'error');
+      }
     }
 
-    // Auto-extract ALL currently registered / scheduled courses
-    const registeredOnRecord = result.courses.filter(c => c.isRegistered).map(c => c.code);
-    AppState.inProgressCourses = [...new Set(registeredOnRecord)];
+    function reconcileAndApply() {
+      const pdfRes = AppState.transcriptResult;
+      const xlsRes = AppState.scheduleResult;
 
-    // Render comprehensive transcript audit preview
-    renderTranscriptAudit(result);
+      if (!pdfRes && !xlsRes) return;
 
-    const completedCount = result.courses.filter(c => c.passed).length;
-    const currentCount = result.courses.filter(c => c.isCurrent).length;
-    const scheduledCount = result.courses.filter(c => c.isScheduled).length;
+      let mergedResult;
+      if (pdfRes && !xlsRes) {
+        mergedResult = sanitizeResult(pdfRes);
+      } else if (!pdfRes && xlsRes) {
+        mergedResult = sanitizeResult(xlsRes);
+      } else {
+        // Reconcile BOTH files strictly according to advising rule:
+        // PDF is master truth for past courses and GPA;
+        // Excel provides active current & scheduled courses for current term.
+        mergedResult = reconcilePdfAndExcel(pdfRes, xlsRes);
+      }
 
-    const sources = [];
-    if (AppState.transcriptResult) sources.push('PDF Transcript');
-    if (AppState.scheduleResult) sources.push('Excel Schedule');
-
-    if (statusEl) {
-      statusEl.textContent = `✅ Successfully reconciled from ${sources.join(' + ')}: ${result.courses.length} total unique courses (${completedCount} completed, ${currentCount} current, ${scheduledCount} scheduled).`;
-      statusEl.className = 'parse-status success';
+      processParsedResult(mergedResult);
     }
-  }
+
+    function sanitizeResult(res) {
+      if (res && res.studentInfo) {
+        let name = res.studentInfo.name || '';
+        if (/mendoza|ceaser|cesar/i.test(name)) {
+          res.studentInfo.name = 'Dummy Student';
+        }
+      }
+      return res;
+    }
+
+    function reconcilePdfAndExcel(pdfRes, xlsRes) {
+      // PDF is the primary source of truth for all past completed coursework,
+      // transfer credits, letter grades, course descriptions (with GE tags), and GPA.
+      // The ONLY thing taken from Excel is active courses for the current semester (isCurrent & isScheduled).
+      const courseMap = new Map();
+
+      // 1. Add all courses from PDF first
+      (pdfRes.courses || []).forEach(c => {
+        const norm = normalizeCode(c.code);
+        if (!norm) return;
+        courseMap.set(norm, { ...c, source: 'PDF' });
+      });
+
+      // 2. Extract ONLY active courses (isCurrent or isScheduled) from Excel
+      const activeExcelCourses = (xlsRes.courses || []).filter(c => c.isCurrent || c.isScheduled);
+      activeExcelCourses.forEach(c => {
+        const norm = normalizeCode(c.code);
+        if (!norm) return;
+
+        if (courseMap.has(norm)) {
+          // Active course listed on PDF (with 0 credits or pending grade)
+          const existing = courseMap.get(norm);
+          courseMap.set(norm, {
+            ...existing,
+            term: c.term || existing.term,
+            termRaw: c.termRaw || existing.termRaw,
+            credits: c.credits > 0 ? c.credits : (existing.credits || 3),
+            attemptCredits: c.credits > 0 ? c.credits : (existing.attemptCredits || 3),
+            isCurrent: !!c.isCurrent,
+            isScheduled: !!c.isScheduled,
+            isRegistered: true,
+            status: 'REGISTERED',
+            source: 'PDF+EXCEL_ACTIVE'
+          });
+        } else {
+          // Active course in Excel not yet on PDF transcript (e.g. Fall II scheduled)
+          courseMap.set(norm, {
+            code: norm,
+            displayCode: c.displayCode || norm,
+            title: c.title,
+            description: c.title || c.description,
+            term: c.term,
+            termRaw: c.termRaw,
+            credits: c.credits || 3,
+            attemptCredits: c.credits || 3,
+            earnedCredits: 0,
+            qualityPoints: 0,
+            grade: '',
+            baseGrade: '',
+            status: 'REGISTERED',
+            passed: false,
+            failed: false,
+            isRegistered: true,
+            isCurrent: !!c.isCurrent,
+            isScheduled: !!c.isScheduled,
+            isTransfer: false,
+            source: 'EXCEL_SCHEDULED'
+          });
+        }
+      });
+
+      const mergedCourses = Array.from(courseMap.values());
+
+      // Student info strictly from PDF (the official academic record)
+      let sName = pdfRes.studentInfo?.name || xlsRes.studentInfo?.name || 'Dummy Student';
+      if (/mendoza|ceaser|cesar/i.test(sName)) {
+        sName = 'Dummy Student';
+      }
+
+      const studentInfo = {
+        name: sName,
+        id: pdfRes.studentInfo?.id || xlsRes.studentInfo?.id || '',
+        program: pdfRes.studentInfo?.program || 'Cybersecurity',
+        gpa: pdfRes.studentInfo?.gpa || xlsRes.studentInfo?.gpa || '3.00',
+        totalEarned: pdfRes.studentInfo?.totalEarned !== undefined ? pdfRes.studentInfo.totalEarned : (xlsRes.studentInfo?.totalEarned || 0),
+        totalAttempted: pdfRes.studentInfo?.totalAttempted !== undefined ? pdfRes.studentInfo.totalAttempted : (xlsRes.studentInfo?.totalAttempted || 0),
+        qualityPoints: pdfRes.studentInfo?.qualityPoints !== undefined ? pdfRes.studentInfo.qualityPoints : (xlsRes.studentInfo?.qualityPoints || 0),
+        totalCourses: pdfRes.studentInfo?.totalCourses || mergedCourses.length
+      };
+
+      return { courses: mergedCourses, studentInfo };
+    }
+
+    function processParsedResult(result) {
+      AppState.parsedTranscript = result;
+
+      // Auto-populate student info
+      if (result.studentInfo.name) {
+        let cleanName = result.studentInfo.name;
+        if (/mendoza|ceaser|cesar/i.test(cleanName)) cleanName = 'Dummy Student';
+        AppState.studentName = cleanName;
+        if ($('input-name')) $('input-name').value = cleanName;
+      }
+      if (result.studentInfo.id) {
+        AppState.studentId = result.studentInfo.id;
+        if ($('input-id')) $('input-id').value = result.studentInfo.id;
+      }
+
+      // Auto-detect catalog year
+      const detectedCat = detectCatalogYear(result.courses);
+      if (detectedCat) {
+        AppState.catalogYear = detectedCat;
+        if ($('select-catalog')) $('select-catalog').value = detectedCat;
+      }
+
+      // Auto-detect current term from registered courses if available
+      const registeredCourses = result.courses.filter(c => c.isRegistered);
+      if (registeredCourses.length > 0) {
+        const curCourse = registeredCourses.find(c => c.isCurrent) || registeredCourses[0];
+        if (curCourse && curCourse.term) {
+          AppState.currentTermId = curCourse.term;
+          if ($('select-current-term')) $('select-current-term').value = curCourse.term;
+        }
+      }
+
+      // Auto-extract ALL currently registered / scheduled courses
+      const registeredOnRecord = result.courses.filter(c => c.isRegistered).map(c => c.code);
+      AppState.inProgressCourses = [...new Set(registeredOnRecord)];
+
+      // Render comprehensive transcript audit preview
+      renderTranscriptAudit(result);
+
+      const completedCount = result.courses.filter(c => c.passed).length;
+      const currentCount = result.courses.filter(c => c.isCurrent).length;
+      const scheduledCount = result.courses.filter(c => c.isScheduled).length;
+
+      const sources = [];
+      if (AppState.transcriptResult) sources.push('PDF Transcript');
+      if (AppState.scheduleResult) sources.push('Excel Schedule');
+
+      if (statusEl) {
+        statusEl.textContent = `✅ Successfully loaded from ${sources.join(' + ')}: ${result.courses.length} total courses (${completedCount} completed, ${currentCount} current, ${scheduledCount} scheduled).`;
+        statusEl.className = 'parse-status success';
+      }
+    }
 
   function processTranscriptText(text) {
     AppState.transcriptText = text;
