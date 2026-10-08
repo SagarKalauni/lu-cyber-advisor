@@ -601,6 +601,7 @@ input, select, textarea { font-family: inherit; }
 }
 .sem-cr-pill.cr-max { background: #D97706; } /* 15 cr exact limit */
 .sem-cr-pill.cr-over { background: #DC2626; } /* over 15 cr */
+.sem-cr-pill.cr-transfer { background: #0D9488; } /* prior transfer credits */
 
 .sem-courses { padding: .55rem; display: flex; flex-direction: column; gap: .4rem; min-height: 44px; }
 

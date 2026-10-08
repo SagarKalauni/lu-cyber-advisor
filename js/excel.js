@@ -156,6 +156,17 @@ function populateOfficialTemplate(wb, plan) {
     }
   }
 
+  // Calculate and write official summary totals in Degree Plan sheet:
+  // Row 35 (I35): GE Credits Transferred/Completed
+  const totalGECredits = (plan.geStatus || [])
+    .filter(s => s.satisfied && s.satisfiedBy && !s.satisfiedBy.isRegistered && s.id !== 'ge_div1' && s.id !== 'ge_div2')
+    .reduce((sum, s) => sum + (s.credits || 3), 0);
+  wsPlan['I35'] = makeNumCell(totalGECredits, {});
+
+  // Row 69 & 70 (I69, I70): Major Credits Completed & Remaining
+  wsPlan['I69'] = makeNumCell(plan.stats.majorCreditsCompleted || 0, {});
+  wsPlan['I70'] = makeNumCell(plan.stats.majorCreditsRemaining || 0, {});
+
   // 5. Populate Sheet 2: Degree Path
   if (wsPath) {
     const semSlots = [

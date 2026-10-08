@@ -7,7 +7,7 @@
 // ── PASSING / FAILED / REGISTERED STATUS ───────────────────
 const PASSING_GRADES = new Set([
   'A', 'A+', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-',
-  'AH', 'P', 'TR-A', 'TR-B', 'TR-C', 'TR-P', 'TR-T'
+  'AH', 'P', 'PASS', 'CR', 'TC', 'TR', 'TR-A', 'TR-B', 'TR-C', 'TR-D', 'TR-P', 'TR-S', 'TR-T'
 ]);
 
 function cleanTripledText(str) {
@@ -151,7 +151,8 @@ function parseTranscript(text) {
     gpa: null,
     totalEarned: 0,
     totalAttempted: 0,
-    qualityPoints: 0
+    qualityPoints: 0,
+    transferEarned: 0
   };
 
   let currentTermRaw = null;
@@ -176,14 +177,34 @@ function parseTranscript(text) {
       continue;
     }
 
-    // Term header line
-    if (line.startsWith('Term:')) {
-      currentTermRaw = line.replace('Term:', '').trim();
+    // Term header line: supports "Term: Fall 24", "Term: Transfer Term", "Transfer Credit", etc.
+    if (line.startsWith('Term:') || /transfer\s+(credit|work|term)/i.test(line) || /^prior college/i.test(line)) {
+      currentTermRaw = line.replace(/^Term:\s*/i, '').trim();
       currentTermId = parseTranscriptTermCode(currentTermRaw);
       continue;
     }
 
-    // Cumulative summary row: e.g. "Undergraduate 1.45 45.00 11 41.00 32.00"
+    // Cumulative line within term: e.g. "Cum GPA: 3.16 Cum: Credits 71.00 / 68.00 Cum Pts: 215.00"
+    const cumCreditsMatch = line.match(/Cum:\s*Credits\s+([\d\.]+)\s*\/\s*([\d\.]+)/i);
+    if (cumCreditsMatch) {
+      const cumAtt = parseFloat(cumCreditsMatch[1]);
+      const cumEarn = parseFloat(cumCreditsMatch[2]);
+      if (!isNaN(cumEarn)) {
+        studentInfo.officialEarnedFromCum = cumEarn;
+        studentInfo.officialAttemptedFromCum = cumAtt;
+      }
+      const gpaMatch = line.match(/Cum\s*GPA:\s*([\d\.]+)/i);
+      if (gpaMatch) {
+        studentInfo.officialGpaFromCum = gpaMatch[1];
+      }
+      const ptsMatch = line.match(/Cum\s*Pts:\s*([\d\.]+)/i);
+      if (ptsMatch) {
+        studentInfo.officialPtsFromCum = parseFloat(ptsMatch[1]);
+      }
+      continue;
+    }
+
+    // Cumulative summary row at end: e.g. "Undergraduate 1.45 45.00 11 41.00 32.00"
     if (line.startsWith('Undergraduate')) {
       const parts = line.split(/\s+/);
       if (parts.length >= 6) {
@@ -198,10 +219,8 @@ function parseTranscript(text) {
 
     // Course lines
     // Pattern: [CODE] [DESCRIPTION] [ATTEMPT] [EARNED] [PTS] [GRADE]
-    // Example: CCJ20000 Criminology (GE-SocSci) 3.00 3.00 9.00 B R
-    // Example: ARTH22700 Global Art History III: From 3.00 3.00 12.00 A
-    //          Colonial Vistas to Avant-Garde (GE-HC:Arts/HD)
-    const m = line.match(/^([A-Z0-9\-]{4,12})\s+(.+?)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)(?:\s+([A-Z0-9\-\+\s]+))?$/);
+    // Supports codes with or without spaces (e.g. "IS 187", "CCJ20000", "AP-GOVT", "ENG 101")
+    const m = line.match(/^([A-Z]{2,5}\s+\d{3,5}[A-Z]?|AP[\s\-][A-Z0-9\-]+|[A-Z0-9\-]{3,12})\s+(.+?)\s+([\d\.]+)\s+([\d\.]+)\s+([\d\.]+)(?:\s+([A-Z0-9\-\+\s]+))?$/);
     if (m) {
       const rawCode = m[1].trim();
       const codeId = normalizeCode(rawCode);
@@ -218,7 +237,7 @@ function parseTranscript(text) {
         const next = lines[i + 1].trim();
         if (!next) { i++; continue; }
         // Stop if next line is another course line, term header, summary, or page footer
-        if (next.match(/^[A-Z0-9\-]{4,12}\s+.+?\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+/) ||
+        if (next.match(/^([A-Z]{2,5}\s+\d{3,5}[A-Z]?|AP[\s\-][A-Z0-9\-]+|[A-Z0-9\-]{3,12})\s+.+?\s+[\d\.]+\s+[\d\.]+\s+[\d\.]+/) ||
             next.startsWith('Term:') || next.startsWith('***') || next.startsWith('Student:') ||
             next.startsWith('Course') || next.startsWith('Cybersecurity') || next.startsWith('Attempted') ||
             next.startsWith('Cum') || next.startsWith('Undergraduate') || next.includes('DOB:') ||
@@ -229,15 +248,22 @@ function parseTranscript(text) {
         i++;
       }
 
+      // Check transfer status
+      const isTransfer = (currentTermId === 'TRANSFER') ||
+                         (currentTermRaw && /transfer/i.test(currentTermRaw)) ||
+                         baseGrade.startsWith('TR') ||
+                         ['CR', 'TC'].includes(baseGrade) ||
+                         rawGrade.startsWith('TR');
+
       let status = 'UNKNOWN';
       let isPassed = false;
       let isFailed = false;
       let isRegistered = false;
 
-      if (PASSING_GRADES.has(baseGrade) || baseGrade.startsWith('TR-')) {
+      if (isTransfer || PASSING_GRADES.has(baseGrade) || baseGrade.startsWith('TR')) {
         status = 'COMPLETED';
         isPassed = true;
-      } else if (['F', 'WF', 'WU'].includes(baseGrade) || rawGrade.split(/\s+/).includes('F')) {
+      } else if (['F', 'WF', 'WU', 'FN'].includes(baseGrade) || rawGrade.split(/\s+/).includes('F')) {
         status = 'FAILED';
         isFailed = true;
       } else if (earned === 0.0 && (!rawGrade || rawGrade === '' || rawGrade === 'IP')) {
@@ -246,14 +272,15 @@ function parseTranscript(text) {
         isRegistered = true;
       }
 
-      const isTransfer = currentTermRaw ? currentTermRaw.toLowerCase().includes('transfer') : baseGrade.startsWith('TR-');
+      const effectiveTerm = isTransfer ? 'TRANSFER' : currentTermId;
+      const effectiveTermRaw = isTransfer ? (currentTermRaw || 'Transfer Credit') : currentTermRaw;
 
       courses.push({
         code: codeId,
         displayCode: rawCode,
         description: desc,
-        term: currentTermId,
-        termRaw: currentTermRaw,
+        term: effectiveTerm,
+        termRaw: effectiveTermRaw,
         attemptCredits: attempt,
         earnedCredits: earned,
         qualityPoints: pts,
@@ -271,17 +298,40 @@ function parseTranscript(text) {
     }
   }
 
-  // Calculate cumulative stats fallback if Undergraduate row was missing
+  // If the official cumulative transcript row (e.g. "Cum: Credits 71.00 / 68.00") is available,
+  // it provides the institutionally verified net earned credits (accounting for repeated courses).
+  if (studentInfo.officialEarnedFromCum !== undefined) {
+    studentInfo.totalEarned = studentInfo.officialEarnedFromCum;
+    if (studentInfo.officialAttemptedFromCum) {
+      studentInfo.totalAttempted = studentInfo.officialAttemptedFromCum;
+    }
+    if (!studentInfo.gpa && studentInfo.officialGpaFromCum) studentInfo.gpa = studentInfo.officialGpaFromCum;
+    if (!studentInfo.qualityPoints && studentInfo.officialPtsFromCum) studentInfo.qualityPoints = studentInfo.officialPtsFromCum;
+  }
+
+  // Calculate cumulative stats fallback if no summary row or official cum was parsed
   if (studentInfo.totalEarned === 0 && courses.length > 0) {
     let earnedSum = 0;
     let attemptSum = 0;
+    const countedCodes = new Set();
     courses.forEach(c => {
-      earnedSum += c.earnedCredits;
-      attemptSum += c.attemptCredits;
+      attemptSum += (c.attemptCredits || 0);
+      if (c.passed) {
+        const codeKey = normalizeCode(c.code);
+        const isEnsemble = codeKey.startsWith('MUS');
+        if (isEnsemble || !countedCodes.has(codeKey)) {
+          earnedSum += (c.earnedCredits || 0);
+          countedCodes.add(codeKey);
+        }
+      }
     });
     studentInfo.totalEarned = earnedSum;
     studentInfo.totalAttempted = attemptSum;
   }
+
+  // Compute total prior transfer credits from passed transfer courses
+  const transferCourses = courses.filter(c => c.isTransfer && c.passed);
+  studentInfo.transferEarned = transferCourses.reduce((sum, c) => sum + (c.earnedCredits || 0), 0);
 
   return { courses, studentInfo };
 }
@@ -411,6 +461,23 @@ async function parseScheduleExcel(fileOrBuffer, fileName = '') {
     });
   });
 
+  // Calculate repeat-adjusted total earned credits (repeats only earn credit once per institution policy)
+  const passedUniqueCodes = new Set();
+  let repeatAdjustedEarned = 0;
+  courses.forEach(c => {
+    if (c.passed && c.earnedCredits > 0) {
+      const codeKey = normalizeCode(c.code);
+      const isEnsemble = codeKey.startsWith('MUS');
+      if (isEnsemble || !passedUniqueCodes.has(codeKey)) {
+        repeatAdjustedEarned += c.earnedCredits;
+        passedUniqueCodes.add(codeKey);
+      }
+    }
+  });
+
+  const transferCourses = courses.filter(c => c.isTransfer && c.passed);
+  const transferEarned = transferCourses.reduce((sum, c) => sum + (c.earnedCredits || 0), 0);
+
   const gpa = totalAttempted > 0 ? (totalQP / totalAttempted).toFixed(2) : '3.00';
 
   // Guess student name if in filename (e.g., 'Wyatt Justus Schedule.xlsx')
@@ -424,9 +491,10 @@ async function parseScheduleExcel(fileOrBuffer, fileName = '') {
     id: '',
     program: program,
     gpa: gpa,
-    totalEarned: totalEarned,
+    totalEarned: repeatAdjustedEarned,
     totalAttempted: totalAttempted,
-    qualityPoints: totalQP
+    qualityPoints: totalQP,
+    transferEarned: transferEarned
   };
 
   return { courses, studentInfo };

@@ -413,6 +413,10 @@ function initStep3() {
         sName = 'Dummy Student';
       }
 
+      const transferEarned = pdfRes.studentInfo?.transferEarned !== undefined
+        ? pdfRes.studentInfo.transferEarned
+        : (xlsRes.studentInfo?.transferEarned || 0);
+
       const studentInfo = {
         name: sName,
         id: pdfRes.studentInfo?.id || xlsRes.studentInfo?.id || '',
@@ -421,7 +425,8 @@ function initStep3() {
         totalEarned: pdfRes.studentInfo?.totalEarned !== undefined ? pdfRes.studentInfo.totalEarned : (xlsRes.studentInfo?.totalEarned || 0),
         totalAttempted: pdfRes.studentInfo?.totalAttempted !== undefined ? pdfRes.studentInfo.totalAttempted : (xlsRes.studentInfo?.totalAttempted || 0),
         qualityPoints: pdfRes.studentInfo?.qualityPoints !== undefined ? pdfRes.studentInfo.qualityPoints : (xlsRes.studentInfo?.qualityPoints || 0),
-        totalCourses: pdfRes.studentInfo?.totalCourses || mergedCourses.length
+        totalCourses: pdfRes.studentInfo?.totalCourses || mergedCourses.length,
+        transferEarned: transferEarned
       };
 
       return { courses: mergedCourses, studentInfo };
@@ -519,7 +524,8 @@ function renderTranscriptAudit(result) {
   if (!container) return;
   container.innerHTML = '';
 
-  const completedCourses  = result.courses.filter(c => c.passed);
+  const transferCourses   = result.courses.filter(c => (c.isTransfer || c.term === 'TRANSFER') && c.passed);
+  const completedLUCourses= result.courses.filter(c => !c.isTransfer && c.term !== 'TRANSFER' && c.passed);
   const currentCourses    = result.courses.filter(c => c.isCurrent);
   const scheduledCourses  = result.courses.filter(c => c.isScheduled);
   const registeredOther   = result.courses.filter(c => c.isRegistered && !c.isCurrent && !c.isScheduled);
@@ -546,10 +552,26 @@ function renderTranscriptAudit(result) {
           <strong class="${sInfo.gpa && parseFloat(sInfo.gpa) < 2.0 ? 'text-danger' : ''}">${sInfo.gpa || 'N/A'}</strong>
         </div>
         <div class="audit-stat">
-          <span class="audit-stat-lbl">Units Earned</span>
-          <strong>${sInfo.totalEarned || 0} / ${sInfo.totalAttempted || 0}</strong>
+          <span class="audit-stat-lbl">Total Earned Credits</span>
+          <strong>${sInfo.totalEarned || 0} / ${sInfo.totalAttempted || 0} CR</strong>
+        </div>
+        <div class="audit-stat">
+          <span class="audit-stat-lbl">Prior Transfer Credits</span>
+          <strong style="color:var(--teal-700, #0D9488);">${sInfo.transferEarned || 0} CR</strong>
         </div>
       </div>
+
+      <!-- Prior Transfer Credits Section -->
+      ${transferCourses.length > 0 ? `
+      <div class="audit-section">
+        <div class="audit-section-title">📦 Prior Transfer Credits (${transferCourses.length} courses • ${sInfo.transferEarned || 0} CR):</div>
+        <div class="preview-chips">
+          ${transferCourses.map(c => `
+            <span class="chip chip-pass" style="background:#F0FDFA; border-color:#99F6E4; color:#0F766E;" title="${c.description}">
+              📦 ${c.displayCode || c.code} (${c.grade || 'TR'}) — ${c.description} (${c.earnedCredits || 3} CR)
+            </span>`).join('')}
+        </div>
+      </div>` : ''}
 
       <!-- Currently Enrolled Section -->
       ${(currentCourses.length > 0 || registeredOther.length > 0) ? `
@@ -575,16 +597,17 @@ function renderTranscriptAudit(result) {
         </div>
       </div>` : ''}
 
-      <!-- Completed Courses Section -->
+      <!-- Lindenwood Completed Courses Section -->
+      ${completedLUCourses.length > 0 ? `
       <div class="audit-section">
-        <div class="audit-section-title">✅ Completed Courses (${completedCourses.length}):</div>
+        <div class="audit-section-title">✅ Lindenwood Completed Courses (${completedLUCourses.length}):</div>
         <div class="preview-chips">
-          ${completedCourses.map(c => `
+          ${completedLUCourses.map(c => `
             <span class="chip chip-pass" title="${c.description}">
-              ✅ ${c.displayCode || c.code} (${c.grade}) — ${c.termRaw || 'Transfer'}
+              ✅ ${c.displayCode || c.code} (${c.grade}) — ${c.termRaw || 'Completed'}
             </span>`).join('')}
         </div>
-      </div>
+      </div>` : ''}
 
       <!-- Failed Courses Section -->
       ${failedCourses.length > 0 ? `
@@ -726,7 +749,12 @@ function renderSummaryBanner(plan) {
       <div class="summary-card">
         <div class="summary-card-icon">🎓</div>
         <div class="summary-card-value">${s.totalEarned || 0} / 120</div>
-        <div class="summary-card-label">Earned / Degree Credits</div>
+        <div class="summary-card-label">Total Earned Credits</div>
+      </div>
+      <div class="summary-card">
+        <div class="summary-card-icon">📦</div>
+        <div class="summary-card-value">${s.transferEarned || 0} CR</div>
+        <div class="summary-card-label">Prior Transfer Credits</div>
       </div>
       <div class="summary-card ${s.cumGPA && parseFloat(s.cumGPA) < 2.0 ? 'card-danger' : ''}">
         <div class="summary-card-icon">${s.cumGPA && parseFloat(s.cumGPA) < 2.0 ? '⚠️' : '📊'}</div>
@@ -745,7 +773,7 @@ function renderSummaryBanner(plan) {
       </div>
     </div>
     <div class="progress-bar-wrapper">
-      <div class="progress-label">Overall Degree Progress: ${pct}% complete (${s.totalEarned || 0} of 120 credits)</div>
+      <div class="progress-label">Overall Degree Progress: ${pct}% complete (${s.totalEarned || 0} of 120 credits${s.transferEarned > 0 ? ` • Includes ${s.transferEarned} Prior Transfer Credits` : ''})</div>
       <div class="progress-track">
         <div class="progress-fill" style="width:${Math.max(5, pct)}%">${pct}%</div>
       </div>
@@ -794,12 +822,19 @@ function renderSemesterGrid(plan) {
     const isCurrentSem = sem.semId === curSemId;
     if (isCurrentSem) card.classList.add('current-term');
 
-    const termTitle = sem.semId === 'TRANSFER'
+    const isTransferCard = sem.semId === 'TRANSFER';
+    const termTitle = isTransferCard
       ? '📦 Prior Transfer Credits'
       : (sem.title || semesterTitle(sem.semId));
 
     const totalCr = (sem.courses || []).reduce((acc, c) => acc + (c.course?.credits !== undefined ? c.course.credits : (getCourse(c.id)?.credits || 3)), 0);
-    const crPillClass = totalCr === 15 ? 'cr-max' : (totalCr > 15 ? 'cr-over' : '');
+    const crPillClass = isTransferCard
+      ? 'cr-transfer'
+      : (totalCr === 15 ? 'cr-max' : (totalCr > 15 ? 'cr-over' : ''));
+
+    const crPillText = isTransferCard
+      ? `${totalCr} CR Transferred`
+      : `${totalCr} / 15 CR`;
 
     card.setAttribute('data-sem-id', sem.semId);
 
@@ -809,7 +844,7 @@ function renderSemesterGrid(plan) {
     card.innerHTML = `
       <div class="sem-header">
         <span class="sem-title">${isCurrentSem ? '🔵 CURRENT ENROLLMENT — ' : ''}${termTitle}</span>
-        <span class="sem-cr-pill ${crPillClass}">${totalCr} / 15 CR</span>
+        <span class="sem-cr-pill ${crPillClass}">${crPillText}</span>
       </div>
       <div class="sem-courses"></div>
     `;
@@ -1225,6 +1260,9 @@ function showConvincedModal(plan) {
         </div>
         <div class="convinced-stat-row">
           <span>Total Earned Credits:</span> <strong>${s.totalEarned || 0} / 120</strong>
+        </div>
+        <div class="convinced-stat-row">
+          <span>Prior Transfer Credits:</span> <strong>${s.transferEarned || 0} CR</strong>
         </div>
         <div class="convinced-stat-row">
           <span>Target Graduation:</span> <strong>${gradTerm}</strong>

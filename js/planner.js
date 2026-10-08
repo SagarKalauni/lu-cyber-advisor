@@ -388,7 +388,7 @@ const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
   // Completed courses — show ALL passed courses (including non-major)
   allTranscriptCourses.filter(c => c.passed).forEach(c => {
     const id = normalizeCode(c.code);
-    const t = c.term || 'TRANSFER';
+    const t = (c.isTransfer || c.term === 'TRANSFER') ? 'TRANSFER' : (c.term || 'TRANSFER');
     const actualCr = (c.earnedCredits !== undefined && c.earnedCredits !== null) ? c.earnedCredits : (getCourse(id)?.credits || 3);
     addToSemester(t, {
       id,
@@ -460,14 +460,24 @@ const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
   let totalEarned = studentInfo?.totalEarned || 0;
   let totalAttempted = studentInfo?.totalAttempted || 0;
 
+  // Calculate prior transfer credits directly from parsed transfer courses
+  const transferCourses = allTranscriptCourses.filter(c => (c.isTransfer || c.term === 'TRANSFER') && c.passed);
+  let transferEarned = (studentInfo?.transferEarned !== undefined && studentInfo.transferEarned !== null)
+    ? studentInfo.transferEarned
+    : transferCourses.reduce((sum, c) => sum + (c.earnedCredits !== undefined ? c.earnedCredits : (getCourse(normalizeCode(c.code))?.credits || 3)), 0);
+
   if (totalEarned === 0) {
-    // Calculate from passed transcript courses directly
+    // Calculate from passed transcript courses directly with repeat deduplication
+    const countedCodes = new Set();
     allTranscriptCourses.forEach(c => {
+      totalAttempted += (c.attemptCredits !== undefined ? c.attemptCredits : 0);
       if (c.passed) {
-        totalEarned += (c.earnedCredits !== undefined ? c.earnedCredits : 0);
-        totalAttempted += (c.attemptCredits !== undefined ? c.attemptCredits : 0);
-      } else if (c.failed) {
-        totalAttempted += (c.attemptCredits !== undefined ? c.attemptCredits : 0);
+        const codeKey = normalizeCode(c.code);
+        const isEnsemble = codeKey.startsWith('MUS');
+        if (isEnsemble || !countedCodes.has(codeKey)) {
+          totalEarned += (c.earnedCredits !== undefined ? c.earnedCredits : (getCourse(codeKey)?.credits || 3));
+          countedCodes.add(codeKey);
+        }
       }
     });
   }
@@ -550,6 +560,8 @@ const MAX_COURSES_SUMMER = 2;  // Max 2 courses in summer
       cumGPA,
       totalEarned,
       totalAttempted,
+      transferEarned,
+      luEarned: Math.max(0, totalEarned - transferEarned),
       majorCreditsRequired: catalog.majorCredits,
       majorCreditsCompleted,
       majorCreditsInProgress,

@@ -557,8 +557,10 @@ const CODE_NORMALIZE = {
 };
 
 function normalizeCode(raw) {
-  const stripped = raw.replace(/\s+/g,'');
-  if (CODE_NORMALIZE[raw]) return CODE_NORMALIZE[raw];
+  if (!raw) return '';
+  const str = String(raw).trim();
+  const stripped = str.replace(/\s+/g,'');
+  if (CODE_NORMALIZE[str]) return CODE_NORMALIZE[str];
   if (CODE_NORMALIZE[stripped]) return CODE_NORMALIZE[stripped];
   return stripped.toUpperCase();
 }
